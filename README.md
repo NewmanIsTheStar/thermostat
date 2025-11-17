@@ -1,7 +1,9 @@
 # Thermostat
 
 ## Description
-Thermostat for ordinary residential central heating and cooling systems based on Raspberry Pi Pico2 W. Thermostat provides a web inteface for configuration.  Thermostat supports monitoring Tesla Powerwall 2 to control power consumption during grid failure.  During an extended grid outage the temperature target is iniitially relaxed to reduce power consumption.  Once the battery level falls below a user configured threshold air conditioning is disabled to avoid draining the battery completely.  
+Thermostat for ordinary residential central heating and cooling systems based on Raspberry Pi Pico2 W. 
+- Provides a web inteface for configuration.
+- Supports monitoring Tesla Powerwall 2 to control power consumption during grid failure.
 
 ## Installation on Ubuntu Linux
 ```
