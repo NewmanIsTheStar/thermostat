@@ -191,6 +191,8 @@ target_include_directories(thermostat PRIVATE
 
 target_link_libraries(thermostat ${pluto_link_libraries})
 
+#pico_set_linker_script(thermostat ${CMAKE_CURRENT_LIST_DIR}/memmap_thermostat_hi.ld)
+
 # create uf2 
 pico_add_extra_outputs(thermostat)
 

@@ -6,6 +6,7 @@
 #ifndef THERMOSTAT_H
 #define THERMOSTAT_H
 
+#define THERMOSTAT_TASK_LOOP_DELAY (10000)
 #define SETPOINT_DEFAULT_CELSIUS_X_10 (210)      // 21.0 C
 #define SETPOINT_MAX_CELSIUS_X_10 (320)          // 32.0 C
 #define SETPOINT_MIN_CELSIUS_X_10 (150)          // 15.0 C 

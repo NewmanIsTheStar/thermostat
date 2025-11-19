@@ -43,9 +43,6 @@
 #include "pluto.h"
 #include "tm1637.h"
 
-// defines
-#define THERMOSTAT_TASK_LOOP_DELAY (10000)
-
 // typdedefs
 typedef struct
 {

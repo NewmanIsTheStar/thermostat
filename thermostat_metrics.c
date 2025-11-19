@@ -144,15 +144,25 @@ int predicted_time_to_temperature(long int target_temperature)
     latest_sample = climate_history.buffer[(climate_history.buffer_index + NUM_ROWS(climate_history.buffer) - 1)%NUM_ROWS(climate_history.buffer)];
     temperature_delta = target_temperature - latest_sample.temperaturex10;
 
-    predicted_time_in_samples = (temperature_delta*100)/climate_trend.gradient; 
-
-    if (predicted_time_in_samples < 0)
+    if (temperature_delta == 0)
     {
-        predicted_time_in_samples = 0;   // never or already there
+        printf("target temperature reached\n");
     }
+    else
+    {
 
-    printf("CURRENT PREDICTION: temperature will reach %d in %d samples\n", target_temperature, predicted_time_in_samples);
-    web.thermostat_temperature_prediction = predicted_time_in_samples;
+        predicted_time_in_samples = (temperature_delta*100)/climate_trend.gradient; 
+        web.thermostat_temperature_prediction = predicted_time_in_samples;        
+
+        if (predicted_time_in_samples < 0)
+        {
+            printf("PREDICTION: temperature will *never* reach target %d\n", target_temperature);
+        }
+        else
+        {
+            printf("PREDICTION: temperature will reach %d in %d samples (%d seconds)\n", target_temperature, predicted_time_in_samples, predicted_time_in_samples*THERMOSTAT_TASK_LOOP_DELAY/1000);
+        }
+    }
 
     return(predicted_time_in_samples);
 }
