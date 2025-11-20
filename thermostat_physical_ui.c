@@ -157,7 +157,6 @@ void hvac_update_display(int temperaturex10, THERMOSTAT_MODE_T hvac_mode, int hv
     static DISPLAY_STATE_T display_state = DISPLAY_SETPOINT;
     static THERMOSTAT_MODE_T last_hvac_mode = 0;
     static int last_hvac_setpoint = 0;    
-    static int last_display_brightness = 0;
     static TickType_t last_display_state_change_tick = 0;
     TickType_t now_tick = 0;
 
@@ -192,7 +191,8 @@ void hvac_update_display(int temperaturex10, THERMOSTAT_MODE_T hvac_mode, int hv
             }
 
             last_hvac_mode = hvac_mode;
-            last_display_state_change_tick = now_tick;  
+            last_display_state_change_tick = now_tick; 
+            display_brightness(DISPLAY_MAX_BRIGHTNESS);  
         }
         else if (hvac_setpointx10 != last_hvac_setpoint)
         {
@@ -200,19 +200,14 @@ void hvac_update_display(int temperaturex10, THERMOSTAT_MODE_T hvac_mode, int hv
             display_state = DISPLAY_SETPOINT;
 
             last_hvac_setpoint = hvac_setpointx10;
-            last_display_state_change_tick = now_tick;        
+            last_display_state_change_tick = now_tick; 
+            display_brightness(DISPLAY_MAX_BRIGHTNESS);        
         }
         else if ((now_tick-last_display_state_change_tick) > 10000)
         {
             // revert to displaying current temperature
-            display_state = DISPLAY_TEMPERATURE;    
-        }
-
-        if (config.thermostat_display_brightness != last_display_brightness)
-        {
-            // make brightness change
-            tm1637_set_brightness(config.thermostat_display_brightness); 
-            last_display_brightness = config.thermostat_display_brightness;
+            display_state = DISPLAY_TEMPERATURE;  
+            display_brightness(config.thermostat_display_brightness);  
         }
 
         switch(display_state)
@@ -336,7 +331,7 @@ int thermostat_display_initialize(void)
         if (!tm1637_set_display_size(config.thermostat_display_num_digits))
         {
             tm1637_init(config.thermostat_seven_segment_display_clock_gpio, config.thermostat_seven_segment_display_data_gpio);
-            tm1637_set_brightness(config.thermostat_display_brightness); 
+            display_brightness(config.thermostat_display_brightness); 
             tm1637_display_word("BOOT", false); 
             
             err = 0;
@@ -358,4 +353,19 @@ int display_gpio_enable(bool enable)
 int button_gpio_enable(bool enable)
 {
     button_gpio_ok = enable;
+}
+
+int display_brightness(int brightness)
+{
+    int err = 0;
+    static int last_display_brightness = 0;
+
+    if (brightness != last_display_brightness)
+    {
+        // make brightness change
+        tm1637_set_brightness(brightness); 
+        last_display_brightness = brightness;
+    }
+
+    return(err);
 }

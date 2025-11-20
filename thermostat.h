@@ -18,6 +18,7 @@
 #define SETPOINT_TEMP_INVALID_OFF (-10003)
 #define SETPOINT_TEMP_DEFAULT_C   (210)
 #define SETPOINT_TEMP_DEFAULT_F   (700)
+#define DISPLAY_MAX_BRIGHTNESS    (7)
 
 typedef enum
 {
@@ -95,6 +96,7 @@ THERMOSTAT_MODE_T get_front_panel_mode(void);
 int thermostat_display_initialize(void);
 int display_gpio_enable(bool enable);
 int button_gpio_enable(bool enable);
+int display_brightness(int brightness);
 
 // thermostat_web_ui.c
 int get_free_schedule_row(void);

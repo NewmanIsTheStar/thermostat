@@ -71,6 +71,8 @@ bool hvac_timer_expired(CLIMATE_TIMER_INDEX_T timer_index);
 void vTimerCallback(TimerHandle_t xTimer);
 int update_current_setpoints(THERMOSTAT_STATE_T last_active, long int temperaturex10);
 long int sanitize_setpoint(long int setpoint);
+bool temporary_setpoint_offset_changed(void);
+int thermostat_relay_lockout_stop(void);
 
 // external variables
 extern NON_VOL_VARIABLES_T config;
@@ -116,15 +118,20 @@ THERMOSTAT_STATE_T control_thermostat_relays(long int temperaturex10)
         // user has set a new mode on the front panel
         effective_mode = front_panel_mode;
 
-        // reset state machine to immediately process mode change
-        hvac_timer_stop(HVAC_LOCKOUT_TIMER);
-        hvac_timer_stop(HVAC_OVERSHOOT_TIMER);
+        // reset state machine to immediately process mode change        
         thermostat_state = HEATING_AND_COOLING_OFF;
         next_active =  HEATING_AND_COOLING_OFF;
-        last_active =  HEATING_AND_COOLING_OFF;    
+        last_active =  HEATING_AND_COOLING_OFF; 
+        thermostat_relay_lockout_stop();
         
         // reset hvac gpio
         set_hvac_gpio(thermostat_state);
+    }
+
+    if (temporary_setpoint_offset_changed())
+    {
+        // user has changed temperature on front panel so cancel lockouts
+        thermostat_relay_lockout_stop();
     }
 
     // determine permitted operations
@@ -669,23 +676,25 @@ int update_current_setpoints(THERMOSTAT_STATE_T last_active, long int temperatur
     }
     else  // HVAC_HEAT_AND_COOL
     {
-        // select default setpoint based on current temperature (non-functional in this mode but appears on status web page)
-        if (web.thermostat_temperature < (candidate_cooling_temperature - config.thermostat_hysteresis))
-        {
-            web.thermostat_set_point = candidate_heating_temperature;           
-        }
-        else
-        {
-            web.thermostat_set_point = candidate_cooling_temperature;
-        }
-        
         // force minimum hsyteresis
         if ((candidate_heating_temperature >= candidate_cooling_temperature) ||
             (abs(candidate_cooling_temperature - candidate_heating_temperature) < (3*config.thermostat_hysteresis)))
         {
             candidate_heating_temperature = candidate_cooling_temperature - 3*config.thermostat_hysteresis;
         }
-        
+
+        // select default setpoint based on current temperature (non-functional in this mode but appears on status web page)
+        if (web.thermostat_temperature < (candidate_cooling_temperature - config.thermostat_hysteresis))
+        {
+            web.thermostat_set_point = candidate_heating_temperature + temporary_set_point_offsetx10;  
+            setpointtemperaturex10 = candidate_heating_temperature;        
+        }
+        else
+        {
+            web.thermostat_set_point = candidate_cooling_temperature + temporary_set_point_offsetx10;
+            setpointtemperaturex10 = candidate_cooling_temperature;
+        }
+                
         web.thermostat_heating_set_point = candidate_heating_temperature + temporary_set_point_offsetx10;
         web.thermostat_cooling_set_point = candidate_cooling_temperature + temporary_set_point_offsetx10;        
     }
@@ -780,4 +789,26 @@ long int sanitize_setpoint(long int setpoint)
     }        
 
     return(setpoint);
+}
+
+bool temporary_setpoint_offset_changed(void)
+{
+    bool change = false;
+    static int last_temporary_setpoint_offset = 0;
+
+    if (last_temporary_setpoint_offset != temporary_set_point_offsetx10)
+    {
+        change = true;
+        last_temporary_setpoint_offset = temporary_set_point_offsetx10;
+    }
+
+    return(change);
+}
+
+int thermostat_relay_lockout_stop(void)
+{
+    hvac_timer_stop(HVAC_LOCKOUT_TIMER);
+    hvac_timer_stop(HVAC_OVERSHOOT_TIMER);
+      
+    return(0);
 }
