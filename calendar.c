@@ -1076,17 +1076,20 @@ int8_t get_datetime(datetime_t *date, int localtime)
  *  
  * \return 1
  */
-int8_t get_datetime_from_unix_time(uint32_t unixtime, datetime_t *date, int localtime)
+int8_t get_datetime_from_unix_time(uint32_t unixtime, datetime_t *date, int *effective_offset, int localtime)
 {
    struct tm * timeinfo;
    time_t t;
+
+   *effective_offset = 0;
 
    t = unixtime;
 
    if (localtime)
    {
       // apply timezone offset
-      t += (config.timezone_offset * 60);
+      *effective_offset = (config.timezone_offset * 60);
+      t += *effective_offset;
    }
 
 	timeinfo = gmtime(&t);
@@ -1100,6 +1103,32 @@ int8_t get_datetime_from_unix_time(uint32_t unixtime, datetime_t *date, int loca
 	date->year = timeinfo->tm_year + 1900;
 
    date->dotw = get_day_of_week(date->month, date->day, date->year);
+
+   if (localtime)  // TODO: rather than compute if daylight savings is active use a global flag set by fake rtc
+   {
+      // check for daylight savings
+      if (config.daylightsaving_enable                                                             &&
+         ((date->month*31+date->day) >= (daylight_saving_start_month*31+daylight_saving_start_day)) &&
+         ((date->month*31+date->day) < (daylight_saving_end_month*31+daylight_saving_end_day)))
+      {
+         // apply one hour daylight savings offset
+         *effective_offset += (60 * 60);
+         t += (60 * 60);         
+
+         // recompute the datetime using the daylight savings offset
+         timeinfo = gmtime(&t);
+
+         memset(date, 0, sizeof(datetime_t));
+         date->sec = timeinfo->tm_sec;
+         date->min = timeinfo->tm_min;
+         date->hour = timeinfo->tm_hour;
+         date->day = timeinfo->tm_mday;
+         date->month = timeinfo->tm_mon + 1;
+         date->year = timeinfo->tm_year + 1900;
+
+         date->dotw = get_day_of_week(date->month, date->day, date->year);         
+      }
+   }
 
    return(1);
 }
@@ -1119,39 +1148,40 @@ int get_timestamp_from_unix_time(uint32_t unixtime, char *timestamp, int len, in
 {
    int ok = 0;
    datetime_t t;
-   char timezone_offset[12];
+   char offset_string[12];
+   int effective_offset = 0;
 
 
-   ok = get_datetime_from_unix_time(unixtime, &t, localtime);      
+   ok = get_datetime_from_unix_time(unixtime, &t, &effective_offset, localtime);      
 
    if (ok)
    {
-      if (!localtime || (config.timezone_offset == 0)) 
+      if (!localtime || (effective_offset == 0)) 
       {
          // zulu time
          if (isoformat)
          {
-            sprintf(timezone_offset, "Z");
+            sprintf(offset_string, "Z");
          }
          else
          {
-            sprintf(timezone_offset, "");
+            sprintf(offset_string, "");
          }
       }
       else
       {
-         sprintf(timezone_offset, "%c%02d:%02d", config.timezone_offset<0?'-':'+', abs(config.timezone_offset/60), abs(config.timezone_offset%60));
+         sprintf(offset_string, "%c%02d:%02d", effective_offset<0?'-':'+', abs(effective_offset/60), abs(effective_offset%60));
       }
 
       if (isoformat)
       {
          // iso format needed for syslog
-         snprintf(timestamp, len, "%04d-%02d-%02dT%02d:%02d:%02d.000%s", t.year, t.month, t.day, t.hour, t.min, t.sec, timezone_offset);
+         snprintf(timestamp, len, "%04d-%02d-%02dT%02d:%02d:%02d.000%s", t.year, t.month, t.day, t.hour, t.min, t.sec, offset_string);
       }
       else
       {
         // human readable format
-        snprintf(timestamp, len, "%04d-%02d-%02d %02d:%02d:%02d UTC%s", t.year, t.month, t.day, t.hour, t.min, t.sec, timezone_offset);
+        snprintf(timestamp, len, "%04d-%02d-%02d %02d:%02d:%02d UTC%s", t.year, t.month, t.day, t.hour, t.min, t.sec, offset_string);
       }
     }
     else
