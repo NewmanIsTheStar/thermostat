@@ -22,7 +22,7 @@
 #include "task.h"
 
 #include "flash.h"
-#include "weather.h"
+//#include "weather.h"
 #include "calendar.h"
 #include "utility.h"
 #include "config.h"
@@ -659,7 +659,12 @@ const char * cgi_network_handler(int iIndex, int iNumParams, char *pcParam[], ch
                 {
                     STRNCPY(config.wifi_password, value, sizeof(config.wifi_password));
                 }
-            }        
+            }   
+
+            if (strcasecmp("hostn", param) == 0)
+            {
+                STRNCPY(config.host_name, value, sizeof(config.host_name));
+            }
 
             if (strcasecmp("ipad", param) == 0)
             {
@@ -1701,124 +1706,124 @@ const char * cgi_wificountry_handler(int iIndex, int iNumParams, char *pcParam[]
     return "/network.shtml";
 }
 
-/*!
- * \brief cgi handler
- *
- * \param[in]  iIndex       index of cgi handler in cgi_handlers table
- * \param[in]  iNumParams   number of parameters
- * \param[in]  pcParam      parameter name
- * \param[in]  pcValue      parameter value 
- * 
- * \return nothing
- */
-const char * cgi_relay_test_stop_handler(int iIndex, int iNumParams, char *pcParam[], char *pcValue[])
-{
-    //TODO: proper intertask communication
-    snprintf(web.status_message, sizeof(web.status_message), "Irrigation test terminated");  
-    web.irrigation_test_enable = 0;
-    set_irrigation_relay_test_zone(-1);    
-    test_end_redirect = false;
-    xTaskNotifyGiveIndexed(worker_tasks[0].task_handle, 0);
+// /*!
+//  * \brief cgi handler
+//  *
+//  * \param[in]  iIndex       index of cgi handler in cgi_handlers table
+//  * \param[in]  iNumParams   number of parameters
+//  * \param[in]  pcParam      parameter name
+//  * \param[in]  pcValue      parameter value 
+//  * 
+//  * \return nothing
+//  */
+// const char * cgi_relay_test_stop_handler(int iIndex, int iNumParams, char *pcParam[], char *pcValue[])
+// {
+//     //TODO: proper intertask communication
+//     snprintf(web.status_message, sizeof(web.status_message), "Irrigation test terminated");  
+//     web.irrigation_test_enable = 0;
+//     set_irrigation_relay_test_zone(-1);    
+//     test_end_redirect = false;
+//     xTaskNotifyGiveIndexed(worker_tasks[0].task_handle, 0);
                
-    // Send the next page back to the user
-    if (config.personality == SPRINKLER_CONTROLLER)
-    {
-        if (!web.irrigation_test_enable)
-        {    
-            return "/index.shtml";
-        }
-        else
-        {
-            return "/z_relay_test.shtml";
-        }
-    }
-    else
-    {
-        return "/index.shtml";
-    }
-}
+//     // Send the next page back to the user
+//     if (config.personality == SPRINKLER_CONTROLLER)
+//     {
+//         if (!web.irrigation_test_enable)
+//         {    
+//             return "/index.shtml";
+//         }
+//         else
+//         {
+//             return "/z_relay_test.shtml";
+//         }
+//     }
+//     else
+//     {
+//         return "/index.shtml";
+//     }
+// }
 
-/*!
- * \brief cgi handler
- *
- * \param[in]  iIndex       index of cgi handler in cgi_handlers table
- * \param[in]  iNumParams   number of parameters
- * \param[in]  pcParam      parameter name
- * \param[in]  pcValue      parameter value 
- * 
- * \return nothing
- */
-const char * cgi_relay_test_start_handler(int iIndex, int iNumParams, char *pcParam[], char *pcValue[])
-{
-    int zone = -1;
-    bool start_test = false;
-    char *next_page_url = "/index.shtml";
-    static int last_zone = -1;
+// /*!
+//  * \brief cgi handler
+//  *
+//  * \param[in]  iIndex       index of cgi handler in cgi_handlers table
+//  * \param[in]  iNumParams   number of parameters
+//  * \param[in]  pcParam      parameter name
+//  * \param[in]  pcValue      parameter value 
+//  * 
+//  * \return nothing
+//  */
+// const char * cgi_relay_test_start_handler(int iIndex, int iNumParams, char *pcParam[], char *pcValue[])
+// {
+//     int zone = -1;
+//     bool start_test = false;
+//     char *next_page_url = "/index.shtml";
+//     static int last_zone = -1;
 
-    if (iNumParams == 1)
-    {
-        // get zone parameter sent by browser
-        if (pcParam[0]!= NULL)
-        {
-            if (pcParam[0][0] == 'x')
-            {
-                zone = pcValue[0][0] - '0';
-                CLIP(zone, 0, config.zone_max);
-            }
-        }
+//     if (iNumParams == 1)
+//     {
+//         // get zone parameter sent by browser
+//         if (pcParam[0]!= NULL)
+//         {
+//             if (pcParam[0][0] == 'x')
+//             {
+//                 zone = pcValue[0][0] - '0';
+//                 CLIP(zone, 0, config.zone_max);
+//             }
+//         }
 
-        // check if we have a valid zone
-        if ((zone >=0) && (zone <config.zone_max))
-        {
-            // check if test in progress
-            if (web.irrigation_test_enable)
-            {
-                // check if test zone altered
-                if (zone != get_irrigation_relay_test_zone())
-                {
-                    snprintf(web.status_message, sizeof(web.status_message), "Changing irrigation test to Zone %d", zone+1);
-                    start_test = true; 
-                }
-                else
-                {
-                    // presume this is a browser page refresh during running test
-                    next_page_url = "/z_relay_test.shtml";
-                }
-            } 
-            else 
-            {
-                // check if a test just ended
-                if (test_end_redirect && (zone == last_zone))
-                {
-                    // redirect browser to main page to avoid refresh restarting the test
-                    test_end_redirect = false;
-                    printf("Redirecting to index due to test end.  zone = %d get_zone = %d\n", zone, get_irrigation_relay_test_zone());
-                }
-                else
-                {
-                    snprintf(web.status_message, sizeof(web.status_message), "Starting irrigation test for Zone %d", zone+1); 
-                    start_test = true; 
-                }
-            }
+//         // check if we have a valid zone
+//         if ((zone >=0) && (zone <config.zone_max))
+//         {
+//             // check if test in progress
+//             if (web.irrigation_test_enable)
+//             {
+//                 // check if test zone altered
+//                 if (zone != get_irrigation_relay_test_zone())
+//                 {
+//                     snprintf(web.status_message, sizeof(web.status_message), "Changing irrigation test to Zone %d", zone+1);
+//                     start_test = true; 
+//                 }
+//                 else
+//                 {
+//                     // presume this is a browser page refresh during running test
+//                     next_page_url = "/z_relay_test.shtml";
+//                 }
+//             } 
+//             else 
+//             {
+//                 // check if a test just ended
+//                 if (test_end_redirect && (zone == last_zone))
+//                 {
+//                     // redirect browser to main page to avoid refresh restarting the test
+//                     test_end_redirect = false;
+//                     printf("Redirecting to index due to test end.  zone = %d get_zone = %d\n", zone, get_irrigation_relay_test_zone());
+//                 }
+//                 else
+//                 {
+//                     snprintf(web.status_message, sizeof(web.status_message), "Starting irrigation test for Zone %d", zone+1); 
+//                     start_test = true; 
+//                 }
+//             }
 
-            // initiate irrigation test
-            if (start_test)
-            {
-                printf("%s\n", web.status_message);        
-                set_irrigation_relay_test_zone(zone);
-                web.irrigation_test_enable = 1;
-                test_end_redirect = true;
-                last_zone = zone;
+//             // initiate irrigation test
+//             if (start_test)
+//             {
+//                 printf("%s\n", web.status_message);        
+//                 set_irrigation_relay_test_zone(zone);
+//                 web.irrigation_test_enable = 1;
+//                 test_end_redirect = true;
+//                 last_zone = zone;
 
-                xTaskNotifyGiveIndexed(worker_tasks[0].task_handle, 0);
+//                 xTaskNotifyGiveIndexed(worker_tasks[0].task_handle, 0);
 
-                next_page_url = "/z_relay_test.shtml";
-            }
-        }
-    }
+//                 next_page_url = "/z_relay_test.shtml";
+//             }
+//         }
+//     }
 
-    return(next_page_url);
-}
+//     return(next_page_url);
+// }
 
 
 /*!
@@ -2182,7 +2187,7 @@ const char * cgi_thermostat_schedule_change_handler(int iIndex, int iNumParams, 
     int new_zone_max = 0;
     int len = 0;
        
-    printf("Got request to change schedule\n");
+    //printf("Got request to change schedule\n");
 
     dump_parameters(iIndex, iNumParams, pcParam, pcValue);
  
@@ -2194,7 +2199,7 @@ const char * cgi_thermostat_schedule_change_handler(int iIndex, int iNumParams, 
 
         if (param && value)
         {
-            printf("Parameter: %s has Value: %s\n", param, value);  
+            //printf("Parameter: %s has Value: %s\n", param, value);  
 
             len = strlen(param);
             if ((len >= 1) && (param[0] == 'x'))
@@ -2457,7 +2462,7 @@ const char * cgi_thermostat_period_delete_handler(int iIndex, int iNumParams, ch
        
 
 
-    printf("Got request to delete thermostat period. row = %d\n", web.thermostat_period_row);
+    //printf("Got request to delete thermostat period. row = %d\n", web.thermostat_period_row);
 
     dump_parameters(iIndex, iNumParams, pcParam, pcValue);
  
@@ -2469,17 +2474,17 @@ const char * cgi_thermostat_period_delete_handler(int iIndex, int iNumParams, ch
 
         if (param && value)
         {
-            printf("Parameter: %s has Value: %s\n", param, value);  
+            //printf("Parameter: %s has Value: %s\n", param, value);  
 
             len = strlen(param);
             if ((len >= 1) && (param[0] == 'x'))
             { 
                 sscanf(value, "%d", &(web.thermostat_period_row));
-                printf("Got request to delete thermostat period. row = %d\n", web.thermostat_period_row);
+                //printf("Got request to delete thermostat period. row = %d\n", web.thermostat_period_row);
                 CLIP(web.thermostat_period_row, 0, NUM_ROWS(config.setpoint_start_mow));  
                 if ((web.thermostat_period_row >=0) && (web.thermostat_period_row < NUM_ROWS(config.setpoint_start_mow)))
                 {
-                    printf("Deleting row %d by setting mow to -1\n", web.thermostat_period_row);
+                    //printf("Deleting row %d by setting mow to -1\n", web.thermostat_period_row);
                     config.setpoint_start_mow[web.thermostat_period_row] = -1;
 
                     // update the schedule grid
@@ -2524,7 +2529,7 @@ const char * cgi_thermostat_period_add_handler(int iIndex, int iNumParams, char 
        
 
 
-    printf("Got request to add thermostat period. row = %d\n", web.thermostat_period_row);
+    //printf("Got request to cancel editing thermostat period. row = %d\n", web.thermostat_period_row);
 
     dump_parameters(iIndex, iNumParams, pcParam, pcValue);
 
@@ -2582,7 +2587,7 @@ const char * cgi_thermostat_period_edit_handler(int iIndex, int iNumParams, char
        
 
 
-    printf("Got request to edit thermostat period. row = %d\n", web.thermostat_period_row);
+    //printf("Got request to display thermostat schedule. row = %d\n", web.thermostat_period_row);
 
     dump_parameters(iIndex, iNumParams, pcParam, pcValue);
  
@@ -2594,7 +2599,7 @@ const char * cgi_thermostat_period_edit_handler(int iIndex, int iNumParams, char
 
         if (param && value)
         {
-            printf("Parameter: %s has Value: %s\n", param, value);  
+            //printf("Parameter: %s has Value: %s\n", param, value);    
 
             len = strlen(param);
             if ((len >= 1) && (param[0] == 'x'))
@@ -3295,8 +3300,8 @@ static const tCGI cgi_handlers[] = {
     {"/personality.cgi",                cgi_personality_handler},   
     {"/relay.cgi",                      cgi_relay_handler}, 
     {"/wificountry.cgi",                cgi_wificountry_handler}, 
-    {"/relay_test_stop.cgi",            cgi_relay_test_stop_handler}, 
-    {"/relay_test_start.cgi",           cgi_relay_test_start_handler},     
+    // {"/relay_test_stop.cgi",            cgi_relay_test_stop_handler}, 
+    // {"/relay_test_start.cgi",           cgi_relay_test_start_handler},     
     {"/led_pattern.cgi",                cgi_led_pattern_handler},   
     {"/led_strip.cgi",                  cgi_led_strip_handler},  
     {"/setpoints.cgi",                  cgi_setpoints_handler},      

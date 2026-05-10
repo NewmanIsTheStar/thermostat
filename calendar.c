@@ -26,7 +26,7 @@
 #include "FreeRTOSConfig.h"
 #include "task.h"
 
-#include "weather.h"
+//#include "weather.h"
 #include "calendar.h"
 #include "cgi.h"
 
@@ -547,6 +547,7 @@ int get_local_time_string(char *timestamp, int len)
     return(printed);
 }
 
+#ifdef USURPER
 /*!
  * \brief Get start and stop times for next irrigation period
  *
@@ -618,7 +619,7 @@ SCHEDULE_QUERY_STATUS_LT get_next_irrigation_period(int *start_mow, int *end_mow
 
    return (irrigate_now);
 }
-
+#endif
 
 /*!
  * \brief Check if time is between start and end dealing with wrap around 

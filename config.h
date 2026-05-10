@@ -60,15 +60,35 @@ typedef enum
 // current version
 typedef struct
 {
+    // ***system config start ***
     int version;
     PERSONALITY_E personality;
     char wifi_ssid[32];
     char wifi_password[32];
     char wifi_country[32];
     char dhcp_enable;
+    char host_name[32];
     char ip_address[32];
     char network_mask[32];    
     char gateway[32];      
+    int timezone_offset;
+    char daylightsaving_enable;
+    char daylightsaving_start[32];
+    char daylightsaving_end[32];
+    char time_server[4][32];
+    int syslog_enable;
+    char syslog_server_ip[32];    
+    int use_archaic_units; 
+    int use_simplified_english;
+    int use_monday_as_week_start; 
+    GPIO_DEFAULT_T gpio_default[29];
+    char mqtt_user[32];
+    char mqtt_password[32];
+    char mqtt_broker_address[32];
+    // ***system config end*** 
+    uint16_t system_crc;
+
+    // ***application config start***    
     char irrigation_enable;
     char day_schedule_enable[7];
     int day_start[7];
@@ -77,11 +97,6 @@ typedef struct
     int day_duration_alternate[7];    
     char schedule_opportunity_start[32];
     char schedule_opportunity_duration[32];
-    int timezone_offset;
-    char daylightsaving_enable;
-    char daylightsaving_start[32];
-    char daylightsaving_end[32];
-    char time_server[4][32];
     int weather_station_enable;
     char weather_station_ip[32];
     int wind_threshold;
@@ -109,18 +124,12 @@ typedef struct
     int govee_irrigation_usurped_green;
     int govee_irrigation_usurped_blue;
     int govee_sustain_duration;
-    int syslog_enable;
-    char syslog_server_ip[32];    
-    int use_archaic_units; 
-    int use_simplified_english;
-    int use_monday_as_week_start; 
     int soil_moisture_threshold[16];
     int zone_max;
     int zone_gpio[16];
     char zone_name[16][32];
     char zone_enable[16];    
     int zone_duration[16][7];
-    GPIO_DEFAULT_T gpio_default[29];
     int thermostat_enable;
     int heating_gpio;
     int cooling_gpio;
@@ -159,7 +168,8 @@ typedef struct
     int thermostat_display_brightness;
     int thermostat_display_num_digits;
     int setpoint_heating_temperaturex10[32]; 
-    int setpoint_cooling_temperaturex10[32];     
+    int setpoint_cooling_temperaturex10[32];    
+    // ***application config end***        
     uint16_t crc;
 } NON_VOL_VARIABLES_T;
 

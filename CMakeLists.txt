@@ -87,6 +87,7 @@ add_custom_command(OUTPUT ${CMAKE_CURRENT_LIST_DIR}/generated/tm1637.py
 
 set(common_source_files
         pluto.c
+        web.c
         weather.c
         flash.c
         ssi.c
@@ -119,7 +120,8 @@ set(pluto_link_libraries
         FreeRTOS-Kernel-Heap4
         pico_flash
         hardware_pio
-        hardware_i2c)
+        hardware_i2c
+        pico_httpd_content)
 
 
 # pico_w has insufficent RAM to incorporate HTTPS web client (thus tesla powerwall monitoring is disabled on pico_w)
@@ -198,7 +200,10 @@ target_link_libraries(thermostat ${pluto_link_libraries})
 pico_add_extra_outputs(thermostat)
 
 
-
+set(WEB_FILES)
+file(GLOB WEB_FILES "${CMAKE_CURRENT_SOURCE_DIR}/html_files/*.shtml")
+pico_add_library(pico_httpd_content NOFLAG)
+pico_set_lwip_httpd_content(pico_httpd_content INTERFACE ${WEB_FILES})
 
 # ====================================================================================
 

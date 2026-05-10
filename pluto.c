@@ -26,7 +26,7 @@
 #include "FreeRTOSConfig.h"
 #include "task.h"
 
-#include "weather.h"
+//#include "weather.h"
 // #include "led_strip.h"
 #include "cgi.h"
 #include "flash.h"
@@ -193,6 +193,7 @@ void boss_task(__unused void *params)
     ip_addr_t gw = {0};
     BaseType_t task_creation_status = 0;
     uint32_t clock_ahead_error = 0;
+
     
     // start watchdog
     xTaskCreate(watchdog_task, "Watchdog Task", configMINIMAL_STACK_SIZE, NULL, WATCHDOG_TASK_PRIORITY, NULL);
@@ -222,7 +223,7 @@ void boss_task(__unused void *params)
     printf("Connecting to Wi-Fi...\n");
     if (!cyw43_arch_wifi_connect_timeout_ms(config.wifi_ssid, config.wifi_password, CYW43_AUTH_WPA2_AES_PSK, 30000))
     {
-        printf("Connected.\n");
+        printf("Connected.\n");                
     } 
     else
     {
