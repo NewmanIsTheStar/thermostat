@@ -26,7 +26,7 @@
 #include "calendar.h"
 #include "utility.h"
 #include "config.h"
-#include "led_strip.h"
+//#include "led_strip.h"
 #include "thermostat.h"
 #include "worker_tasks.h"
 #include "pluto.h"
@@ -733,111 +733,111 @@ const char * cgi_network_handler(int iIndex, int iNumParams, char *pcParam[], ch
     return "/network.shtml";
 }
 
-/*!
- * \brief cgi handler
- *
- * \param[in]  iIndex       index of cgi handler in cgi_handlers table
- * \param[in]  iNumParams   number of parameters
- * \param[in]  pcParam      parameter name
- * \param[in]  pcValue      parameter value 
- * 
- * \return nothing
- */
-const char * cgi_led_handler(int iIndex, int iNumParams, char *pcParam[], char *pcValue[])
-{
-    int i = 0;
-    char *param = NULL;
-    char *value = NULL;
+// /*!
+//  * \brief cgi handler
+//  *
+//  * \param[in]  iIndex       index of cgi handler in cgi_handlers table
+//  * \param[in]  iNumParams   number of parameters
+//  * \param[in]  pcParam      parameter name
+//  * \param[in]  pcValue      parameter value 
+//  * 
+//  * \return nothing
+//  */
+// const char * cgi_led_handler(int iIndex, int iNumParams, char *pcParam[], char *pcValue[])
+// {
+//     int i = 0;
+//     char *param = NULL;
+//     char *value = NULL;
 
-    config.use_led_strip_to_indicate_irrigation_status = 0;   
-    config.led_rgbw = 0;   
+//     config.use_led_strip_to_indicate_irrigation_status = 0;   
+//     config.led_rgbw = 0;   
 
-    //dump_parameters(iIndex, iNumParams, pcParam, pcValue);
+//     //dump_parameters(iIndex, iNumParams, pcParam, pcValue);
 
-    i = 0;
-    while (i < iNumParams)
-    {
-        param = pcParam[i];
-        value = pcValue[i];
+//     i = 0;
+//     while (i < iNumParams)
+//     {
+//         param = pcParam[i];
+//         value = pcValue[i];
 
-        if (param && value)
-        {
-            //printf("Parameter: %s has Value: %s\n", param, value);
+//         if (param && value)
+//         {
+//             //printf("Parameter: %s has Value: %s\n", param, value);
 
             
-            if (strcasecmp("lpat", param) == 0)
-            {
-                sscanf(value, "%d", &config.led_pattern);    
+//             if (strcasecmp("lpat", param) == 0)
+//             {
+//                 sscanf(value, "%d", &config.led_pattern);    
 
-                set_led_pattern_local(config.led_pattern);         
-            }
+//                 set_led_pattern_local(config.led_pattern);         
+//             }
 
-            if (strcasecmp("lspd", param) == 0)
-            {
-                sscanf(value, "%d", &config.led_speed);
+//             if (strcasecmp("lspd", param) == 0)
+//             {
+//                 sscanf(value, "%d", &config.led_speed);
 
-                set_led_speed_local(config.led_speed);              
-            }  
+//                 set_led_speed_local(config.led_speed);              
+//             }  
 
-            if (strcasecmp("lpin", param) == 0)
-            {
-                sscanf(value, "%d", &config.led_pin);             
-            }
+//             if (strcasecmp("lpin", param) == 0)
+//             {
+//                 sscanf(value, "%d", &config.led_pin);             
+//             }
 
-            if (strcasecmp("lrgbw", param) == 0)
-            {
-                if (value[0])
-                {
-                    config.led_rgbw = 1;
-                } 
-                else
-                {
-                    config.led_rgbw = 0;
-                }                             
-            }            
+//             if (strcasecmp("lrgbw", param) == 0)
+//             {
+//                 if (value[0])
+//                 {
+//                     config.led_rgbw = 1;
+//                 } 
+//                 else
+//                 {
+//                     config.led_rgbw = 0;
+//                 }                             
+//             }            
 
-            if (strcasecmp("lnum", param) == 0)
-            {
-                sscanf(value, "%d", &config.led_number);             
-            }  
+//             if (strcasecmp("lnum", param) == 0)
+//             {
+//                 sscanf(value, "%d", &config.led_number);             
+//             }  
 
-            if (strcasecmp("lie", param) == 0)
-            {
-                if (value[0])
-                {
-                    config.use_led_strip_to_indicate_irrigation_status = 1;
-                } 
-                else
-                {
-                    config.use_led_strip_to_indicate_irrigation_status = 0;
-                }                             
-            }
+//             if (strcasecmp("lie", param) == 0)
+//             {
+//                 if (value[0])
+//                 {
+//                     config.use_led_strip_to_indicate_irrigation_status = 1;
+//                 } 
+//                 else
+//                 {
+//                     config.use_led_strip_to_indicate_irrigation_status = 0;
+//                 }                             
+//             }
 
-            if (strcasecmp("lia", param) == 0)
-            {
-                sscanf(value, "%d", &config.led_pattern_when_irrigation_active);             
-            }  
+//             if (strcasecmp("lia", param) == 0)
+//             {
+//                 sscanf(value, "%d", &config.led_pattern_when_irrigation_active);             
+//             }  
 
-            if (strcasecmp("liu", param) == 0)
-            {
-                sscanf(value, "%d", &config.led_pattern_when_irrigation_terminated);             
-            }  
+//             if (strcasecmp("liu", param) == 0)
+//             {
+//                 sscanf(value, "%d", &config.led_pattern_when_irrigation_terminated);             
+//             }  
 
-            if (strcasecmp("lis", param) == 0)
-            {
-                sscanf(value, "%d", &config.led_sustain_duration);             
-            }                          
+//             if (strcasecmp("lis", param) == 0)
+//             {
+//                 sscanf(value, "%d", &config.led_sustain_duration);             
+//             }                          
 
-        }
+//         }
 
-        i++;
-    }
+//         i++;
+//     }
 
 
-    // Send the next page back to the user
-    config_changed();
-    return "/addressable_led.shtml";
-}
+//     // Send the next page back to the user
+//     config_changed();
+//     return "/addressable_led.shtml";
+// }
 
 /*!
  * \brief cgi handler
@@ -3289,7 +3289,7 @@ static const tCGI cgi_handlers[] = {
     {"/ecowitt.cgi",                    cgi_ecowitt_handler},   
     {"/network.cgi",                    cgi_network_handler},    
     {"/reboot.cgi",                     cgi_reboot_handler},    
-    {"/aled.cgi",                       cgi_led_handler},   
+    // {"/aled.cgi",                       cgi_led_handler},   
     {"/psched.cgi",                     cgi_portrait_schedule_handler},     
     {"/dsched.cgi",                     cgi_day_schedule_handler},   
     {"/mood.cgi",                       cgi_mood_handler},       

@@ -49,7 +49,7 @@
 // Pico HTTPS request example
 #include "json_parser.h"
 #include "powerwall.h"              // Options, macros, forward declarations
-#include "weather.h"
+// #include "weather.h"
 #include "config.h"
 #include "pluto.h"
 

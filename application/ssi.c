@@ -23,7 +23,7 @@
 
 #include "pluto.h"
 #include "powerwall.h"
-#include "led_strip.h"
+// #include "led_strip.h"
 
 #ifdef USE_GIT_HASH_AS_VERSION
 #include "githash.h"
@@ -1455,11 +1455,11 @@ u16_t ssi_handler(int iIndex, char *pcInsert, int iInsertLen)
             printed = snprintf(pcInsert, iInsertLen, "%d", config.gpio_number);
         }               
         break;   
-        case SSI_lpat: //lpat
-        {
-            printed = snprintf(pcInsert, iInsertLen, "%s", get_pattern_name(config.led_pattern)); 
-        }               
-        break; 
+        // case SSI_lpat: //lpat
+        // {
+        //     printed = snprintf(pcInsert, iInsertLen, "%s", get_pattern_name(config.led_pattern)); 
+        // }               
+        // break; 
         case SSI_lspd: //lspd
         {
             printed = snprintf(pcInsert, iInsertLen, "%d", config.led_speed);
@@ -1531,16 +1531,16 @@ u16_t ssi_handler(int iIndex, char *pcInsert, int iInsertLen)
             printed = snprintf(pcInsert, iInsertLen, "%s", config.use_led_strip_to_indicate_irrigation_status?"checked":""); 
         }
         break;
-        case SSI_lia: //lia
-        {
-            printed = snprintf(pcInsert, iInsertLen, "%s", get_pattern_name(config.led_pattern_when_irrigation_active));           
-        }
-        break; 
-        case SSI_liu: //liu
-        {
-            printed = snprintf(pcInsert, iInsertLen, "%s", get_pattern_name(config.led_pattern_when_irrigation_terminated));            
-        }
-        break; 
+        // case SSI_lia: //lia
+        // {
+        //     printed = snprintf(pcInsert, iInsertLen, "%s", get_pattern_name(config.led_pattern_when_irrigation_active));           
+        // }
+        // break; 
+        // case SSI_liu: //liu
+        // {
+        //     printed = snprintf(pcInsert, iInsertLen, "%s", get_pattern_name(config.led_pattern_when_irrigation_terminated));            
+        // }
+        // break; 
         case SSI_lis: //lis
         {
             printed = snprintf(pcInsert, iInsertLen, "%d", config.led_sustain_duration);

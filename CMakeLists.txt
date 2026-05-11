@@ -37,188 +37,61 @@ endif()
 
 set(PICO_SDK_PATH ${CMAKE_CURRENT_LIST_DIR}/pico-sdk)
 set(FREERTOS_KERNEL_PATH ${CMAKE_CURRENT_LIST_DIR}/FreeRTOS-Kernel)
-#set(PICOTOOL_FORCE_FETCH_FROM_GIT 1)
 
 add_compile_definitions(PLUTO_VER="${APP_VERSION}")
 add_compile_definitions(PICO_CYW43_ARCH_FREERTOS)
 add_compile_definitions(PICO_INCLUDE_RTC_DATETIME)
 add_compile_definitions(FAKE_RTC)
 
-# initialize pico-sdk from submodule
+# ====================================================================================
 include(pico-sdk/pico_sdk_init.cmake)
-
-# set the project name ${PROJECT_NAME}
-project(thermostat C CXX ASM)
 
 # Initialise the Raspberry Pi Pico SDK
 pico_sdk_init()
 
-if(NOT PICO_BOARD STREQUAL "pico_w") 
-include(FreeRTOS-Kernel/portable/ThirdParty/Community-Supported-Ports/GCC/RP2350_ARM_NTZ/FreeRTOS_Kernel_import.cmake)
-#include(FreeRTOS-Kernel/portable/ThirdParty/GCC/RP2350_ARM_NTZ/FreeRTOS_Kernel_import.cmake)  
+if(PICO_BOARD STREQUAL "pico_w") 
+    include(FreeRTOS-Kernel/portable/ThirdParty/GCC/RP2040/FreeRTOS_Kernel_import.cmake)
+elseif(PICO_BOARD STREQUAL "pico2_w") 
+    include(FreeRTOS-Kernel/portable/ThirdParty/Community-Supported-Ports/GCC/RP2350_ARM_NTZ/FreeRTOS_Kernel_import.cmake)
 else()
-include(FreeRTOS_Kernel_import.cmake)
+    message(FATAL_ERROR "Unsupported board type: ${BOARD_TYPE}")
 endif()
 
 # create "generated" directory
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/generated)
 
-# create githash used instead of APP_VERSION for debug builds
-message("Creating githash.h")
-execute_process(COMMAND
-        ./create_githash_h
-        WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}
-        )
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")       
         add_compile_definitions(USE_GIT_HASH_AS_VERSION)
 endif()
 
-# create pio header file for controlling addressable led strips 
-add_custom_command(OUTPUT ${CMAKE_CURRENT_LIST_DIR}/generated/ws2812.py
-        DEPENDS ${CMAKE_CURRENT_LIST_DIR}/ws2812.pio
-        COMMAND Pioasm -o python ${CMAKE_CURRENT_LIST_DIR}/ws2812.pio ${CMAKE_CURRENT_LIST_DIR}/generated/ws2812.py
-        VERBATIM)
-
-# create pio header file for controlling seven segnment display 
-add_custom_command(OUTPUT ${CMAKE_CURRENT_LIST_DIR}/generated/tm1637.py
-        DEPENDS ${CMAKE_CURRENT_LIST_DIR}/tm1637.pio
-        COMMAND Pioasm -o python ${CMAKE_CURRENT_LIST_DIR}/tm1637.pio ${CMAKE_CURRENT_LIST_DIR}/generated/tm1637.py
-        VERBATIM)        
-
-set(common_source_files
-        pluto.c
-        web.c
-        weather.c
-        flash.c
-        ssi.c
-        cgi.c
-        calendar.c
-        utility.c
-        config.c
-        dhcpserver.c
-        dnsserver.c
-        led_strip.c
-        sdk_callback.c
-        watchdog.c
-        message.c
-        udp.c
-        wifi.c
-        usurper_ping.c
-        ping_core.c
-        )
-
+      
 # ====================================================================================
-# pluto common libraries
-set(pluto_link_libraries
-        pico_cyw43_arch_lwip_sys_freertos
-        pico_lwip_freertos
-        pico_lwip_api        
-        pico_lwip_sntp
-        pico_lwip_http
-        pico_stdlib
-        pico_rand
-        FreeRTOS-Kernel-Heap4
-        pico_flash
-        hardware_pio
-        hardware_i2c
-        pico_httpd_content)
+# thermostat
 
+project(thermostat C CXX ASM)   # set the project name ${PROJECT_NAME}
 
-# pico_w has insufficent RAM to incorporate HTTPS web client (thus tesla powerwall monitoring is disabled on pico_w)
-if(NOT PICO_BOARD STREQUAL "pico_w")
-        set(pluto_link_libraries ${pluto_link_libraries}        
-                pico_lwip_mbedtls
-                pico_mbedtls)        
-endif()
+add_executable(${PROJECT_NAME})
+add_subdirectory(pluto)  
+add_subdirectory(application)
 
+target_compile_definitions(${PROJECT_NAME} PRIVATE APP_NAME="${PROJECT_NAME}")
+target_compile_definitions(${PROJECT_NAME} PRIVATE INCORPORATE_THERMOSTAT)
 
-# ====================================================================================
-# Thermostat
+pico_set_program_name(${PROJECT_NAME} "${PROJECT_NAME}")
+pico_set_program_version(${PROJECT_NAME} ${APP_VERSION})
 
-message("Creating HTML binary blob for THERMOSTAT")
-execute_process(COMMAND
-        ../makefsdata.py
-        WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/thermostat/
-        )
-
-if(NOT PICO_BOARD STREQUAL "pico_w")
-        set(thermostat_source_files ${common_source_files}
-                thermostat/worker_tasks.c        
-                thermostat_task.c
-                thermostat_aht10.c
-                thermostat_metrics.c
-                thermostat_physical_ui.c
-                thermostat_web_ui.c
-                thermostat_hvac.c
-                powerwall.c
-                json_parser.c
-                tm1637.c)        
-endif()  
-
-add_executable(thermostat ${thermostat_source_files})  
-target_compile_definitions(thermostat PRIVATE APP_NAME="Thermostat" HTTPD_FSDATA_FILE="thermostat/htmldata.c")
-if(NOT PICO_BOARD STREQUAL "pico_w") 
-target_compile_definitions(thermostat PRIVATE INCORPORATE_THERMOSTAT)
-endif()
-
-pico_generate_pio_header(thermostat ${CMAKE_CURRENT_LIST_DIR}/tm1637.pio OUTPUT_DIR ${CMAKE_CURRENT_LIST_DIR}/generated)
-
-pico_set_program_name(thermostat "thermostat")
-pico_set_program_version(thermostat ${APP_VERSION})
-
-# enable/disable output over UART/USB  ***TODO: had to disable stdio over usb in Release builds as it causes random crashes/resets during startup
+# enable/disable output over UART/USB
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
-        pico_enable_stdio_usb(thermostat 0)
-        pico_enable_stdio_uart(thermostat 0)        
+        pico_enable_stdio_usb(${PROJECT_NAME} 0)    # this should be 1 but it started causing random crashes at startup with some sdk versions!
+        pico_enable_stdio_uart(${PROJECT_NAME} 0)        
 else() 
-        pico_enable_stdio_usb(thermostat 0)
-        pico_enable_stdio_uart(thermostat 1)        
+        pico_enable_stdio_usb(${PROJECT_NAME} 0)
+        pico_enable_stdio_uart(${PROJECT_NAME} 1)        
 endif()
-
-target_include_directories(thermostat PRIVATE
-        ${CMAKE_CURRENT_LIST_DIR}
-        ${CMAKE_CURRENT_LIST_DIR}/pico-sdk/lib/lwip/contrib/ports/freertos/include/ 
-        if(PICO_BOARD STREQUAL "pico_w")
-        ${CMAKE_CURRENT_LIST_DIR}/FreeRTOS-Kernel/portable/ThirdParty/GCC/RP2040/
-        else()
-        ${CMAKE_CURRENT_LIST_DIR}/FreeRTOS-Kernel/portable/ThirdParty/GCC/RP2350_ARM_NTZ/include/
-        endif()        
-        ${CMAKE_CURRENT_LIST_DIR}/FreeRTOS-Kernel/include/
-        ${CMAKE_CURRENT_LIST_DIR}/pico-sdk/src/rp2_common/pico_cyw43_arch/include/
-        ${CMAKE_CURRENT_LIST_DIR}/pico-sdk/lib/cyw43-driver/src/
-        ${CMAKE_CURRENT_LIST_DIR}/pico-sdk/src/rp2_common/pico_cyw43_driver/include/
-        ${CMAKE_CURRENT_LIST_DIR}/pico-sdk/lib/lwip/src/apps/altcp_tls/
-        ${CMAKE_CURRENT_LIST_DIR}/pico-sdk/lib/mbedtls/include/
-        ${CMAKE_CURRENT_LIST_DIR}/pico-sdk/lib/lwip/contrib/apps/ping/
-        )
-
-target_link_libraries(thermostat ${pluto_link_libraries})
-
-#pico_set_linker_script(thermostat ${CMAKE_CURRENT_LIST_DIR}/memmap_thermostat_hi.ld)
 
 # create uf2 
-pico_add_extra_outputs(thermostat)
+pico_add_extra_outputs(${PROJECT_NAME})
 
 
-set(WEB_FILES)
-file(GLOB WEB_FILES "${CMAKE_CURRENT_SOURCE_DIR}/html_files/*.shtml")
-pico_add_library(pico_httpd_content NOFLAG)
-pico_set_lwip_httpd_content(pico_httpd_content INTERFACE ${WEB_FILES})
 
-# ====================================================================================
 
-# TODO -- rebuild modified html without running cmake again
-# pico_set_lwip_httpd_content(pico_httpd_content INTERFACE
-# ${CMAKE_CURRENT_LIST_DIR}/html_files/index.shtml
-# ${CMAKE_CURRENT_LIST_DIR}/html_files/config.shtml
-# ${CMAKE_CURRENT_LIST_DIR}/html_files/page2.shtml
-# ${CMAKE_CURRENT_LIST_DIR}/html_files/ip_config.js
-# ${CMAKE_CURRENT_LIST_DIR}/html_files/sprajax.js
-# ${CMAKE_CURRENT_LIST_DIR}/html_files/favicon.ico
-# )
-
-# set(WEB_FILES)
-# file(GLOB WEB_FILES "${CMAKE_CURRENT_SOURCE_DIR}/thermostat/html_files/*.shtml")
-# pico_set_lwip_httpd_content(pico_httpd_content INTERFACE ${WEB_FILES})
-
-#pico_set_lwip_httpd_content(pico_httpd_content INTERFACE ${CMAKE_CURRENT_LIST_DIR}/thermostat/html_files/t_gpio.shtml)

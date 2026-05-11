@@ -21,7 +21,7 @@
 
 #include <stdarg.h>
 
-#include <weather.h>
+// #include <weather.h>
 #include <flash.h>
 #include <calendar.h>
 #include <utility.h>
@@ -29,7 +29,7 @@
 #include <watchdog.h>
 #include <pluto.h>
 #include "powerwall.h"
-#include <shelly.h>
+// #include <shelly.h>
 #include "json_parser.h"
 
 
