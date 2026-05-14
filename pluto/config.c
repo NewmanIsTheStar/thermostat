@@ -26,16 +26,19 @@
 //#define DISABLE_CONFIG_UPGRADE (1)
 
 int config_validate(void);
-void config_v1_to_v2(void);
-void config_v2_to_v3(void);
-void config_v3_to_v4(void);
-void config_v4_to_v5(void);
-void config_v5_to_v6(void);
-void config_v6_to_v7(void);
-void config_v7_to_v8(void);
-void config_v8_to_v9(void);
-void config_v9_to_v10(void);
-void config_v10_to_v11(void);
+void config_system_variable_initialize(void);
+void config_blank_to_v1(void *previous_config);
+void config_v1_to_v2(void *previous_config);
+void config_v2_to_v3(void *previous_config);
+void config_v3_to_v4(void *previous_config);
+void config_v4_to_v5(void *previous_config);
+void config_v5_to_v6(void *previous_config);
+void config_v6_to_v7(void *previous_config);
+void config_v7_to_v8(void *previous_config);
+void config_v8_to_v9(void *previous_config);
+void config_v9_to_v10(void *previous_config);
+void config_v10_to_v11(void *previous_config);
+void config_v11_to_v12(void *previous_config);
 
 NON_VOL_VARIABLES_T config;
 static int config_dirty_flag = 0;
@@ -51,7 +54,8 @@ static NON_VOL_CONVERSION_T config_info[] =
     {8,      offsetof(NON_VOL_VARIABLES_T_VERSION_8, version),   offsetof(NON_VOL_VARIABLES_T_VERSION_8, crc),   &config_v7_to_v8},  
     {9,      offsetof(NON_VOL_VARIABLES_T_VERSION_9, version),   offsetof(NON_VOL_VARIABLES_T_VERSION_9, crc),   &config_v8_to_v9},    
     {10,     offsetof(NON_VOL_VARIABLES_T_VERSION_10, version),  offsetof(NON_VOL_VARIABLES_T_VERSION_10, crc),  &config_v9_to_v10},   
-    {11,     offsetof(NON_VOL_VARIABLES_T, version),             offsetof(NON_VOL_VARIABLES_T, crc),             &config_v10_to_v11},                         
+    {11,     offsetof(NON_VOL_VARIABLES_T_VERSION_11, version),  offsetof(NON_VOL_VARIABLES_T_VERSION_11, crc),  &config_v10_to_v11},
+    {12,     offsetof(NON_VOL_VARIABLES_T, version),             offsetof(NON_VOL_VARIABLES_T, crc),             &config_v11_to_v12},                                
 };
 
 
@@ -61,7 +65,7 @@ static NON_VOL_CONVERSION_T config_info[] =
  * 
  * \return 0 on success, -1 on error
  */
-void config_blank_to_v1(void)
+void config_blank_to_v1(void *previous_config)
 {
     int i;
 
@@ -149,7 +153,7 @@ void config_blank_to_v1(void)
  * 
  * \return 0 on success, -1 on error
  */
-void config_v1_to_v2(void)
+void config_v1_to_v2(void *previous_config)
 {
     int i = 0;
 
@@ -167,7 +171,7 @@ void config_v1_to_v2(void)
  * 
  * \return 0 on success, -1 on error
  */
-void config_v2_to_v3(void)
+void config_v2_to_v3(void *previous_config)
 {
     int i = 0;
     int j = 0;
@@ -205,7 +209,7 @@ void config_v2_to_v3(void)
  * 
  * \return 0 on success, -1 on error
  */
-void config_v3_to_v4(void)
+void config_v3_to_v4(void *previous_config)
 {
     int i = 0;
     int j = 0;
@@ -226,7 +230,7 @@ void config_v3_to_v4(void)
  * 
  * \return 0 on success, -1 on error
  */
-void config_v4_to_v5(void)
+void config_v4_to_v5(void *previous_config)
 {
     int i = 0;
     int j = 0;
@@ -286,7 +290,7 @@ void config_v4_to_v5(void)
  * 
  * \return 0 on success, -1 on error
  */
-void config_v5_to_v6(void)
+void config_v5_to_v6(void *previous_config)
 {
     int i = 0;
     int j = 0;
@@ -340,7 +344,7 @@ void config_v5_to_v6(void)
  * 
  * \return 0 on success, -1 on error
  */
-void config_v6_to_v7(void)
+void config_v6_to_v7(void *previous_config)
 {
     int i = 0;
     int j = 0;
@@ -372,7 +376,7 @@ void config_v6_to_v7(void)
  * 
  * \return 0 on success, -1 on error
  */
-void config_v7_to_v8(void)
+void config_v7_to_v8(void *previous_config)
 {
     int i = 0;
     int j = 0;
@@ -389,7 +393,7 @@ void config_v7_to_v8(void)
  * 
  * \return 0 on success, -1 on error
  */
-void config_v8_to_v9(void)
+void config_v8_to_v9(void *previous_config)
 {
     printf("Converting configuration from version 8 to version 9\n"); 
     config.version = 9;     
@@ -402,7 +406,7 @@ void config_v8_to_v9(void)
  * 
  * \return 0 on success, -1 on error
  */
-void config_v9_to_v10(void)
+void config_v9_to_v10(void *previous_config)
 {
     printf("Converting configuration from version 9 to version 10\n"); 
     config.version = 10;     
@@ -415,7 +419,7 @@ void config_v9_to_v10(void)
  * 
  * \return 0 on success, -1 on error
  */
-void config_v10_to_v11(void)
+void config_v10_to_v11(void *previous_config)
 {
     int i;
 
@@ -431,6 +435,141 @@ void config_v10_to_v11(void)
     config.thermostat_hysteresis = 10;
 }
 
+ /*!
+ * \brief Convert configuration from v11 to v12 and set default values for new parameters
+ * 
+ * \return 0 on success, -1 on error
+ */
+void config_v11_to_v12(void *previous_config)
+{
+    int i;
+    NON_VOL_VARIABLES_T_VERSION_11 *temp_config = NULL;
+    NON_VOL_VARIABLES_T_VERSION_11 *config_v11 = NULL;
+
+    printf("Attempting complex conversion. This may take some time.\n");
+
+    if (previous_config)
+    {
+        if (((NON_VOL_VARIABLES_T_VERSION_11 *)previous_config)->version == 12)
+        {
+            printf("Previous config version 12 is available in flash\n");
+        }
+        else
+        {
+            printf("Previous config is not available from flash. Allocating temporary RAM buffer.\n");
+            previous_config = NULL;
+
+            // allocate temporary buffer
+            temp_config = malloc(sizeof(NON_VOL_VARIABLES_T_VERSION_11));
+            if (temp_config)
+            {
+                previous_config = temp_config;
+            }
+            else
+            {
+                printf("Failed to allocate RAM.  Conversion in RAM not possible.  Buring flash with v12.\n");
+                if (!flash_write_non_volatile_variables())
+                {
+                    previous_config = flash_get_config_location();
+
+                    if (((NON_VOL_VARIABLES_T_VERSION_11 *)previous_config)->version != 12)
+                    {
+                        printf("Unexpected version found in flash %d\n", ((NON_VOL_VARIABLES_T_VERSION_11 *)previous_config)->version);
+                        previous_config = NULL;
+                    }
+                }
+                
+                if (previous_config == NULL)
+                {
+                    printf("Unable to perform conversion using either flash or ram\n");
+                }
+            }
+
+        }
+    }
+
+    if (previous_config)
+    {
+        config_v11 = (NON_VOL_VARIABLES_T_VERSION_11 *)previous_config;
+
+        printf("Converting configuration from version 11 to version 12\n"); 
+        config.version = 12; 
+
+        // ***system config start ***
+        //int version;
+        config.personality = config_v11->personality;
+        memcpy(config.wifi_ssid, config_v11->wifi_ssid, sizeof(config.wifi_ssid));
+        memcpy(config.wifi_password, config_v11->wifi_password, sizeof(config.wifi_password));
+        memcpy(config.wifi_country, config_v11->wifi_country, sizeof(config.wifi_country));                
+        config.dhcp_enable = config_v11->dhcp_enable;
+        //memcpy(config.host_name, config_v11->host_name, sizeof(config.host_name)); 
+        STRNCPY(config.host_name, "usurper", sizeof(config.host_name));          
+        memcpy(config.ip_address, config_v11->ip_address, sizeof(config.ip_address));   
+        memcpy(config.network_mask, config_v11->network_mask, sizeof(config.network_mask));   
+        memcpy(config.gateway, config_v11->gateway, sizeof(config.gateway));   
+        config.timezone_offset = config_v11->timezone_offset;
+        config.daylightsaving_enable = config_v11->daylightsaving_enable;     
+        memcpy(config.daylightsaving_start, config_v11->daylightsaving_start, sizeof(config.daylightsaving_start)); 
+        memcpy(config.daylightsaving_end, config_v11->daylightsaving_end, sizeof(config.daylightsaving_end)); 
+        memcpy(config.time_server, config_v11->time_server, sizeof(config.time_server));                 
+        config.syslog_enable = config_v11->syslog_enable; 
+        memcpy(config.syslog_server_ip, config_v11->syslog_server_ip, sizeof(config.syslog_server_ip)); 
+        config.use_archaic_units = config_v11->use_archaic_units; 
+        config.use_simplified_english = config_v11->use_simplified_english; 
+        config.use_monday_as_week_start = config_v11->use_monday_as_week_start; 
+        memcpy(config.gpio_default, config_v11->gpio_default, sizeof(config.gpio_default));   
+        config.mqtt_user[0] = 0;
+        config.mqtt_password[0] = 0;        
+        config.mqtt_broker_address[0] = 0;
+
+        // ***application config start*** 
+        config.thermostat_enable = config_v11->thermostat_enable; 
+        config.heating_gpio = config_v11->heating_gpio; 
+        config.cooling_gpio = config_v11->cooling_gpio; 
+        config.fan_gpio = config_v11->fan_gpio; 
+        config.heating_to_cooling_lockout_mins = config_v11->heating_to_cooling_lockout_mins; 
+        config.minimum_heating_on_mins = config_v11->minimum_heating_on_mins; 
+        config.minimum_cooling_on_mins = config_v11->minimum_cooling_on_mins; 
+        config.minimum_heating_off_mins = config_v11->minimum_heating_off_mins; 
+        config.minimum_cooling_off_mins = config_v11->minimum_cooling_off_mins; 
+        config.thermostat_mode = config_v11->thermostat_mode; 
+        config.max_cycles_per_hour = config_v11->max_cycles_per_hour; 
+        config.setpoint_number = config_v11->setpoint_number; 
+        memcpy(config.setpoint_name, config_v11->setpoint_name, sizeof(config.setpoint_name)); 
+        memcpy(config.setpoint_temperaturex10, config_v11->setpoint_temperaturex10, sizeof(config.setpoint_temperaturex10)); 
+        config.thermostat_hysteresis = config_v11->thermostat_hysteresis; 
+        memcpy(config.setpoint_start_mow, config_v11->setpoint_start_mow, sizeof(config.setpoint_start_mow)); 
+        memcpy(config.setpoint_mode, config_v11->setpoint_mode, sizeof(config.setpoint_mode)); 
+        memcpy(config.powerwall_ip, config_v11->powerwall_ip, sizeof(config.powerwall_ip)); 
+        memcpy(config.powerwall_hostname, config_v11->powerwall_hostname, sizeof(config.powerwall_hostname)); 
+        memcpy(config.powerwall_password, config_v11->powerwall_password, sizeof(config.powerwall_password)); 
+        config.grid_down_heating_setpoint_decrease = config_v11->grid_down_heating_setpoint_decrease; 
+        config.grid_down_cooling_setpoint_increase = config_v11->grid_down_cooling_setpoint_increase; 
+        config.grid_down_heating_disable_battery_level = config_v11->grid_down_heating_disable_battery_level; 
+        config.grid_down_heating_enable_battery_level = config_v11->grid_down_heating_enable_battery_level; 
+        config.grid_down_cooling_disable_battery_level = config_v11->grid_down_cooling_disable_battery_level; 
+        config.grid_down_cooling_enable_battery_level = config_v11->grid_down_cooling_enable_battery_level; 
+        memcpy(config.temperature_sensor_remote_ip, config_v11->temperature_sensor_remote_ip, sizeof(config.temperature_sensor_remote_ip)); 
+        config.thermostat_mode_button_gpio = config_v11->thermostat_mode_button_gpio; 
+        config.thermostat_increase_button_gpio = config_v11->thermostat_increase_button_gpio; 
+        config.thermostat_decrease_button_gpio = config_v11->thermostat_decrease_button_gpio; 
+        config.thermostat_temperature_sensor_clock_gpio = config_v11->thermostat_temperature_sensor_clock_gpio; 
+        config.thermostat_temperature_sensor_data_gpio = config_v11->thermostat_temperature_sensor_data_gpio; 
+        config.thermostat_seven_segment_display_clock_gpio = config_v11->thermostat_seven_segment_display_clock_gpio; 
+        config.thermostat_seven_segment_display_data_gpio = config_v11->thermostat_seven_segment_display_data_gpio; 
+        config.outside_temperature_threshold = config_v11->outside_temperature_threshold; 
+        config.thermostat_display_brightness = config_v11->thermostat_display_brightness; 
+        config.thermostat_display_num_digits = config_v11->thermostat_display_num_digits; 
+        memcpy(config.setpoint_heating_temperaturex10, config_v11->setpoint_heating_temperaturex10, sizeof(config.setpoint_heating_temperaturex10)); 
+        memcpy(config.setpoint_cooling_temperaturex10, config_v11->setpoint_cooling_temperaturex10, sizeof(config.setpoint_cooling_temperaturex10)); 
+    }
+
+
+    if (temp_config)
+    {
+      free(temp_config);
+    }  
+}
 
 // ************************************************************************************************************************
 // ************************************************************************************************************************
@@ -498,6 +637,9 @@ int config_write(void)
 {
     int err = 0;
 
+    #ifdef DISABLE_CONFIG_WRITE
+    printf("Configuration Writes are disabled!\n");
+    #else
     // write configuration to flash if altered recently
     if (config_dirty(true))
     {
@@ -508,14 +650,15 @@ int config_write(void)
         } while (config_dirty(true));
 
         // update crc
-        config.crc = crc_buffer((uint8_t *)&config, offsetof(NON_VOL_VARIABLES_T, crc));  
-
+        config.system_crc = crc_buffer((uint8_t *)&config, offsetof(NON_VOL_VARIABLES_T, system_crc));         
+        config.crc = crc_buffer((uint8_t *)&config, offsetof(NON_VOL_VARIABLES_T, crc)); 
+         
         // compare ram and flash copies
         if (memcmp((char *)(XIP_BASE +  FLASH_TARGET_OFFSET), ((char *)&config), sizeof(config)))
         {
             printf("Writing configuration to flash\n");
-            flash_write_non_volatile_variables();
-        }
+            flash_write_non_volatile_variables(); 
+        }           
         else
         {
             printf("Refusing to write configuration to flash as RAM and flash copies are identical\n");
@@ -526,15 +669,13 @@ int config_write(void)
         {
             // config was updated by another task after we computed the crc and possibly before we wrote to flash
             printf("Config update occured while writing to flash, will retry\n");
-
-            // printf("config.crc = %d\n", config.crc);
-            // printf("calculated crc = %d\n", crc_buffer((uint8_t *)&config, offsetof(NON_VOL_VARIABLES_T, crc)));
             
             config_changed();
 
             err = -1;
         }          
     }  
+    #endif
 
     return(err);
 }
@@ -579,6 +720,7 @@ int config_validate(void)
     uint16_t crc_from_flash = 0;
     uint16_t calculated_crc = 0;
     int latest_valid_config_version = 0;
+    void *previous_config = NULL;
 
     // read configuration into RAM
     flash_read_non_volatile_variables(); 
@@ -598,13 +740,38 @@ int config_validate(void)
         }
     }
 
-#ifndef DISABLE_CONFIG_UPGRADE    
+    // check if we did not find valid config version
+    if (latest_valid_config_version == 0)
+    {
+        // no valid config --- try to fallback to system config only
+        crc_from_flash = *((uint16_t *)((uint8_t *)&config + offsetof(NON_VOL_VARIABLES_T, system_crc)));
+        calculated_crc = crc_buffer((uint8_t *)&config, offsetof(NON_VOL_VARIABLES_T, system_crc));
+
+        if(crc_from_flash == calculated_crc)
+        {
+            printf("Found valid system configuration variables (e.g. network config).  These will be preserved.\n");
+        }
+        else
+        {
+            printf("Initializing system configuration variables\n");
+            config_system_variable_initialize();
+        }
+    }
+
+#ifndef DISABLE_CONFIG_UPGRADE
+
+    // obtain pointer to previous config if available
+    if (version_from_flash > 0)
+    {
+        previous_config = flash_get_config_location();
+    }
+
     // upgrade configuration sequentially to latest version 
     for(i=0; i < NUM_ROWS(config_info); i++)
     {
         if (latest_valid_config_version < config_info[i].version)
         {
-            config_info[i].upgrade_function();
+            config_info[i].upgrade_function(previous_config);
         }
     }
 #else
@@ -623,6 +790,7 @@ int config_validate(void)
     return(err);
 }
 
+
 /*!
  * \brief Set a default time server in config if all four time server entries are blank
  * 
@@ -640,4 +808,58 @@ int config_timeserver_failsafe(void)
     }
 
     return(0);
+}
+
+/*!
+ * \brief Set default values for system variables
+ * 
+ * \return 0 on success, -1 on error
+ */
+void config_system_variable_initialize(void)
+{
+    int i;
+
+    printf("Initializing configuration system variables\n");
+
+    // personality
+    config.personality = NO_PERSONALITY;
+
+    // network
+    STRNCPY(config.wifi_country, "World Wide", sizeof(config.wifi_country));      
+    config.wifi_ssid[0] = 0;
+    config.wifi_password[0] = 0;
+    config.dhcp_enable = 1;
+    STRNCPY(config.host_name, APP_NAME, sizeof(config.host_name));
+    config.ip_address[0] = 0;
+    config.network_mask[0] = 0;
+    
+    // time
+    config.timezone_offset = -6*60;
+    config.daylightsaving_enable = 1;  
+    STRNCPY(config.daylightsaving_start, "Second Sunday in March", sizeof(config.daylightsaving_start));
+    STRNCPY(config.daylightsaving_end, "First Sunday in November", sizeof(config.daylightsaving_end));
+    STRNCPY(config.time_server[0], "pool.ntp.org", sizeof(config.time_server[0]));
+    STRNCPY(config.time_server[1], "time.google.com", sizeof(config.time_server[1]));
+    STRNCPY(config.time_server[2], "time.facebook.com", sizeof(config.time_server[2]));
+    STRNCPY(config.time_server[3], "time.windows.com", sizeof(config.time_server[3]));        
+
+    // syslog
+    STRNCPY(config.syslog_server_ip, "spud.badnet", sizeof(config.syslog_server_ip));         
+    config.syslog_enable = 0;
+    
+    // foibles
+    config.use_archaic_units = 1;
+    config.use_simplified_english = 1;
+    config.use_monday_as_week_start = 0;
+
+    // gpio
+    for(i=0; i<NUM_ROWS(config.gpio_default); i++)
+    {
+        config.gpio_default[i] = GP_UNINITIALIZED;
+    } 
+    
+    // mqtt
+    config.mqtt_user[0] = 0;
+    config.mqtt_password[0] = 0;
+    config.mqtt_broker_address[0] = 0;
 }
