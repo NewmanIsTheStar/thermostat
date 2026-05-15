@@ -63,7 +63,7 @@ target_link_libraries(${PROJECT_NAME} ${pluto_link_libraries})
 message("Creating githash.h")
 execute_process(COMMAND
         ./create_githash_h
-        WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/pluto
+        WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}
         )
         
 
