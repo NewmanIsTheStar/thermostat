@@ -113,7 +113,7 @@ int pluto(void)
     printf("\n%s version ", APP_NAME);
 
 #ifdef USE_GIT_HASH_AS_VERSION
-    printf("%s\n\n", GITHASH);
+    printf("%s\n\n", GITHASH);  
 #else
     printf("%s\n\n", PLUTO_VER);
 #endif
