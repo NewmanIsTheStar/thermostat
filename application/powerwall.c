@@ -1,11 +1,6 @@
-/* Pico HTTPS request example *************************************************
- *                                                                            *
- *  An HTTPS client example for the Raspberry Pi Pico W                       *
- *                                                                            *
- *  A simple yet complete example C application which sends a single request  *
- *  to a web server over HTTPS and reads the resulting response.              *
- *                                                                            *
- ******************************************************************************/
+/* The https code in this file is based on the https example code found at
+https://github.com/marceloalcocer/picohttps/blob/main/picohttps.c         */
+
 
 
 /* Includes *******************************************************************/
@@ -35,49 +30,17 @@
 #include "mbedtls/entropy.h"
 #include "mbedtls/ctr_drbg.h"
 #include "mbedtls/error.h"
-//#include "mbedtls/certs.h"
-
-// Mbed TLS
-//#include "mbedtls/ssl.h"            // Server Name Indication TLS extension
-//#ifdef MBEDTLS_DEBUG_C
-//#include "mbedtls/debug.h"          // Mbed TLS debugging
-//#endif //MBEDTLS_DEBUG_C
-//#include "mbedtls/check_config.h"
 
 #include <string.h>
-
-// Pico HTTPS request example
 #include "json_parser.h"
 #include "powerwall.h"              // Options, macros, forward declarations
-// #include "weather.h"
 #include "config.h"
 #include "pluto.h"
 
 
 #define GET_REQUEST "GET / HTTP/1.0\r\n\r\n"
 
-// prototypes
-int wait_for_packet(TickType_t ticks);
-void powerwall_poll(void);
-
-// external variables
-extern NON_VOL_VARIABLES_T config;
-extern WEB_VARIABLES_T web;
-extern char jsonp_value[255][128];
-extern NON_VOL_VARIABLES_T config;
-
-// global variables
-char copy_buffer[2048];
-int copy_ready = 0;
-JSON_PARSER_CONTEXT_T powerwall_parser_context;
-
-//char request_buffer[512];
-
-//#define USE_RTOS_MBEDTLS_INTERFACE
-#ifdef USE_RTOS_MBEDTLS_INTERFACE
-int bilbo(void);
-#endif
-
+// types
 typedef enum
 {
     PW_INITIATE,
@@ -93,17 +56,58 @@ typedef enum
     PW_TEAR_DOWN
 } PW_STATE_T;
 
-
+// prototypes
 void tear_down(struct altcp_pcb* pcb);
+int strip_first_last_quotes(char *token, int length);
+void tear_down(struct altcp_pcb* pcb);
+bool resolve_hostname(ip_addr_t* ipaddr);
+void altcp_free_pcb(struct altcp_pcb* pcb);
+void altcp_free_config(struct altcp_tls_config* config);
+void altcp_free_arg(struct altcp_callback_arg* arg);
+bool connect_to_host(ip_addr_t* ipaddr, struct altcp_pcb** pcb);
+void callback_gethostbyname(const char* name, const ip_addr_t* resolved, void* ipaddr);
+void callback_altcp_err(void* arg, lwip_err_t err);
+lwip_err_t callback_altcp_poll(void* arg, struct altcp_pcb* pcb);
+lwip_err_t callback_altcp_sent(void* arg, struct altcp_pcb* pcb, u16_t len);
+lwip_err_t callback_altcp_recv(void* arg, struct altcp_pcb* pcb, struct pbuf* buf, lwip_err_t err);
+lwip_err_t callback_altcp_connect(void* arg, struct altcp_pcb* pcb, lwip_err_t err);
+void powerwall_poll(void);
+bool http_request(struct altcp_pcb* pcb, HTTP_REQUEST_TYPE_T type, char *url, char *host, char *content, char *auth_token, char *cookies);
+int powerwall_login(struct altcp_pcb* pcb);
+int powerwall_get_grid_status(struct altcp_pcb* pcb, char *auth_token, char *cookies);
+int powerwall_get_battery_percentage(struct altcp_pcb* pcb, char *auth_token, char *cookies);
+int powerwall_logout(struct altcp_pcb* pcb, char *auth_token, char *cookies);
+int http_extract_cookies(const char *http_packet, char *cookies, int length);
+int wait_for_packet(TickType_t ticks);
 
-/* Main ***********************************************************************/
+// external variables
+extern NON_VOL_VARIABLES_T config;
+extern WEB_VARIABLES_T web;
+extern char jsonp_value[255][128];
+extern NON_VOL_VARIABLES_T config;
 
+// global variables
+char copy_buffer[2048];
+int copy_ready = 0;
+JSON_PARSER_CONTEXT_T powerwall_parser_context;
+
+
+/*!
+ * \brief Remove first and last double quotes if present.  Alteration occurs within the  passed buffer.
+ *
+ * \param[in]   token       buffer containing string
+ * \param[in]   length      length of buffer
+ * 
+ * \return 0 if no quotes removed, 1 if quotes removed
+ */
 int strip_first_last_quotes(char *token, int length)
 {
+    int err = 0;
     int i;
 
     if (token && (length > 2)) 
     {
+        // we presume that first and last characters are double quotes
         if (token[0] == '"')
         {
             //printf("start quote strip length = %d\n", length);
@@ -113,24 +117,28 @@ int strip_first_last_quotes(char *token, int length)
                 if (((token[i+1] == '"') && (token[i+2] == 0)) ||
                      (token[i+1] == 0))
                 {
-                    //printf("terminated quote strip\n");
                     token[i] = 0;
+                    err = 1;
                     break;
                 }
                 else
                 {
                     token[i] = token[i+1];
-                    //printf("copied: %c\n", token[i]);
                 }
             }
-            //printf("ended quote strip\n");
         }
     }
 
-    return(0);
+    return(err);
 }
 
 
+/*!
+ * \brief State machine to read powerwall battery level
+ *
+ * 
+ * \return nothing
+ */
 void powerwall_poll(void)
 {
     static PW_STATE_T powerwall_connection_state = PW_INITIATE;
@@ -175,7 +183,8 @@ void powerwall_poll(void)
                 //printf("Resolved %s (%s)\n", PICOHTTPS_HOSTNAME, char_ipaddr);
 
                 powerwall_connection_state = PW_CONNECT;
-            } 
+            }
+
             // deliberate fall through
 
         case PW_CONNECT:
@@ -397,10 +406,7 @@ void powerwall_poll(void)
             {
                 printf("Powerwall Battery Percentage is = %s\n", battery_percentage);
 
-                // original -- value without tenths
-                //sscanf(battery_percentage, "%d.", &(web.powerwall_battery_percentage));
-
-                // new -- value with tenths as all the thresholds are in this format
+                // value with tenths as all the thresholds are in this format
                 web.powerwall_battery_percentage = get_int_with_tenths_from_string(battery_percentage); 
 
                 //printf("==> %d\n", web.powerwall_battery_percentage);
@@ -463,7 +469,7 @@ void powerwall_poll(void)
             break;
     }
 
-    // TEST TEST TEST
+    // reset parser and powerwall status in preparation for next poll
     jsonp_initialize_context(&powerwall_parser_context);
     jsonp_initialize_cache(&powerwall_parser_context);
     sprintf(grid_status, "UNKNOWN");
@@ -473,7 +479,12 @@ void powerwall_poll(void)
     return;
 }
 
-
+/*!
+ * \brief Warpper to pace powerwall polling
+ *
+ * 
+ * \return nothing
+ */
 void powerwall_check(void)
 {
     static bool first_poll = true; 
@@ -482,6 +493,7 @@ void powerwall_check(void)
 
     now = xTaskGetTickCount();
 
+    // poll powerwall once every 15 ninutes
     if (((now - last_poll) > 1000*60*15) || first_poll)
     {
         powerwall_poll();
@@ -491,7 +503,13 @@ void powerwall_check(void)
     }
 }
 
-
+/*!
+ * \brief Free all resources allocated for https connection
+ *
+ * \param[in]   pcb       protocol control block
+ * 
+ * \return nothing
+ */
 void tear_down(struct altcp_pcb* pcb)
 {
     if(pcb)
@@ -517,8 +535,15 @@ void tear_down(struct altcp_pcb* pcb)
 }
 
 
-// Resolve hostname
-bool resolve_hostname(ip_addr_t* ipaddr){
+/*!
+ * \brief Resolve hostname
+ *
+ * \param[in]   ipaddr       32-bit IPv4 address
+ * 
+ * \return nothing
+ */
+bool resolve_hostname(ip_addr_t* ipaddr)
+{
 
     // Zero address
     ipaddr->addr = IPADDR_ANY;
@@ -552,34 +577,66 @@ bool resolve_hostname(ip_addr_t* ipaddr){
 
 }
 
-// Free TCP + TLS protocol control block
-void altcp_free_pcb(struct altcp_pcb* pcb){
+/*!
+ * \brief Free TCP + TLS protocol control block
+ *
+ * \param[in]   pcb       Protocol Control Block
+ * 
+ * \return nothing
+ */
+void altcp_free_pcb(struct altcp_pcb* pcb)
+{
     cyw43_arch_lwip_begin();
     lwip_err_t lwip_err = altcp_close(pcb);         // Frees PCB
     cyw43_arch_lwip_end();
     while(lwip_err != ERR_OK)
+    {
         sleep_ms(PICOHTTPS_ALTCP_CONNECT_POLL_INTERVAL);
         cyw43_arch_lwip_begin();
         lwip_err = altcp_close(pcb);                // Frees PCB
         cyw43_arch_lwip_end();
+    }
 }
 
-// Free TCP + TLS connection configuration
-void altcp_free_config(struct altcp_tls_config* config){
+/*!
+ * \brief Free TCP + TLS connection configuration
+ *
+ * \param[in]   altcp_tls_config       TLS configuration
+ * 
+ * \return nothing
+ */
+void altcp_free_config(struct altcp_tls_config* config)
+{
     cyw43_arch_lwip_begin();
     altcp_tls_free_config(config);
     cyw43_arch_lwip_end();
 }
 
-// Free TCP + TLS connection callback argument
-void altcp_free_arg(struct altcp_callback_arg* arg){
-    if(arg){
+/*!
+ * \brief Free TCP + TLS connection callback argument
+ *
+ * \param[in]   altcp_callback_arg       Callback
+ * 
+ * \return nothing
+ */
+void altcp_free_arg(struct altcp_callback_arg* arg)
+{
+    if(arg)
+    {
         free(arg);
     }
 }
 
-// Establish TCP + TLS connection with server
-bool connect_to_host(ip_addr_t* ipaddr, struct altcp_pcb** pcb){
+/*!
+ * \brief Establish TCP + TLS connection with server
+ *
+ * \param[in]   ipaddr       IPv4 address
+ * \param[in]   pcb          Protocol Control Block
+ * 
+ * \return true if ok, false on error
+ */
+bool connect_to_host(ip_addr_t* ipaddr, struct altcp_pcb** pcb)
+{
 
     int connection_wait_loop_count = 0;
 
@@ -609,7 +666,8 @@ bool connect_to_host(ip_addr_t* ipaddr, struct altcp_pcb** pcb){
     cyw43_arch_lwip_begin();
     *pcb = altcp_tls_new(config, IPADDR_TYPE_V4);
     cyw43_arch_lwip_end();
-    if(!(*pcb)){
+    if(!(*pcb))
+    {
         altcp_free_config(config);
         return false;
     }
@@ -712,7 +770,8 @@ bool connect_to_host(ip_addr_t* ipaddr, struct altcp_pcb** pcb){
     cyw43_arch_lwip_end();
 
     // Connection request sent
-    if(lwip_err == ERR_OK){
+    if(lwip_err == ERR_OK)
+    {
 
         // Await connection
         //
@@ -738,7 +797,9 @@ bool connect_to_host(ip_addr_t* ipaddr, struct altcp_pcb** pcb){
         }                                
             
 
-    } else {
+    } 
+    else
+    {
 
         // Free allocated resources
         altcp_free_pcb(*pcb);
@@ -752,18 +813,35 @@ bool connect_to_host(ip_addr_t* ipaddr, struct altcp_pcb** pcb){
 
 }
 
-// DNS response callback
+/*!
+ * \brief DNS response callback
+ *
+ * \param[in]   name       name to resolve
+ * \param[in]   resolved   result
+ * \param[in]   ipaddr     IPv4 address
+ * 
+ * \return nothing
+ */
 void callback_gethostbyname(
     const char* name,
     const ip_addr_t* resolved,
-    void* ipaddr
-){
+    void* ipaddr)
+{
     if(resolved) *((ip_addr_t*)ipaddr) = *resolved;         // Successful resolution
     else ((ip_addr_t*)ipaddr)->addr = IPADDR_NONE;          // Failed resolution
 }
 
-// TCP + TLS connection error callback
-void callback_altcp_err(void* arg, lwip_err_t err){
+
+/*!
+ * \brief TCP + TLS connection error callback
+ *
+ * \param[in]   arg   argument
+ * \param[in]   err   error code
+ * 
+ * \return nothing
+ */
+void callback_altcp_err(void* arg, lwip_err_t err)
+{
 
     // Print error code
     printf("Connection error [lwip_err_t err == %d]\n", err);
@@ -777,25 +855,52 @@ void callback_altcp_err(void* arg, lwip_err_t err){
 
 }
 
-// TCP + TLS connection idle callback
-lwip_err_t callback_altcp_poll(void* arg, struct altcp_pcb* pcb){
+/*!
+ * \brief TCP + TLS connection idle callback
+ *
+ * \param[in]   arg   argument
+ * \param[in]   pcb   Protocol Control Block
+ * 
+ * \return 0 on success or error code
+ */
+lwip_err_t callback_altcp_poll(void* arg, struct altcp_pcb* pcb)
+{
     // Callback not currently used
     return ERR_OK;
 }
 
-// TCP + TLS data acknowledgement callback
-lwip_err_t callback_altcp_sent(void* arg, struct altcp_pcb* pcb, u16_t len){
+
+/*!
+ * \brief TCP + TLS data acknowledgement callback
+ *
+ * \param[in]   arg   argument
+ * \param[in]   pcb   Protocol Control Block
+ * \param[in]   len   length
+ * 
+ * \return 0 on success or error code
+ */
+lwip_err_t callback_altcp_sent(void* arg, struct altcp_pcb* pcb, u16_t len)
+{
     ((struct altcp_callback_arg*)arg)->acknowledged = len;
     return ERR_OK;
 }
 
-// TCP + TLS data reception callback
+/*!
+ * \brief TCP + TLS data reception callback
+ *
+ * \param[in]   arg   argument
+ * \param[in]   pcb   Protocol Control Block
+ * \param[in]   buf   buffer
+ * \param[in]   err   error code
+ * 
+ * \return 0 on success or error code
+ */
 lwip_err_t callback_altcp_recv(
     void* arg,
     struct altcp_pcb* pcb,
     struct pbuf* buf,
-    lwip_err_t err
-){
+    lwip_err_t err)
+{
 
     // Store packet buffer at head of chain
     //
@@ -861,17 +966,29 @@ lwip_err_t callback_altcp_recv(
 
 }
 
-// TCP + TLS connection establishment callback
+/*!
+ * \brief TCP + TLS connection establishment callback
+ *
+ * \param[in]   arg   argument
+ * \param[in]   pcb   Protocol Control Block
+ * \param[in]   err   error code
+ * 
+ * \return 0 on success or error code
+ */
 lwip_err_t callback_altcp_connect(
     void* arg,
     struct altcp_pcb* pcb,
-    lwip_err_t err
-){
+    lwip_err_t err)
+{
     ((struct altcp_callback_arg*)arg)->connected = true;
     return ERR_OK;
 }
 
-
+/*!
+ * \brief TCP + TLS connection establishment callback
+ * 
+ * \return true if ok, false on error
+ */
 int powerwall_init(void)
 {
     jsonp_initialize_context(&powerwall_parser_context);
@@ -883,7 +1000,19 @@ int powerwall_init(void)
 }
 
 
-// Send HTTP request
+/*!
+ * \brief Send HTTP request
+ *
+ * \param[in]   pcb        Protocol Control Block
+ * \param[in]   type       HTTP request type
+ * \param[in]   url        Universal Resource Locator 
+ * \param[in]   host       hostname
+ * \param[in]   content    http request
+ * \param[in]   auth_token authentication token
+ * \param[in]   cookies    cookies
+ * 
+ * \return false on success
+ */
 bool http_request(struct altcp_pcb* pcb, HTTP_REQUEST_TYPE_T type, char *url, char *host, char *content, char *auth_token, char *cookies)
 {
     bool err = false;
@@ -1001,7 +1130,13 @@ bool http_request(struct altcp_pcb* pcb, HTTP_REQUEST_TYPE_T type, char *url, ch
 
 }
 
-
+/*!
+ * \brief Send login request to powerwall
+ *
+ * \param[in]   pcb        Protocol Control Block
+ * 
+ * \return 0 on success
+ */
 int powerwall_login(struct altcp_pcb* pcb)
 {
     int err = 0;
@@ -1015,7 +1150,15 @@ int powerwall_login(struct altcp_pcb* pcb)
 }
 
 
-
+/*!
+ * \brief Send grid status request to powerwall
+ *
+ * \param[in]   pcb             Protocol Control Block
+ * \param[in]   auth_token      authentication token
+ * \param[in]   cookies         cookies
+ * 
+ * \return 0 on success
+ */
 int powerwall_get_grid_status(struct altcp_pcb* pcb, char *auth_token, char *cookies)
 {
     int err = 0;   
@@ -1025,6 +1168,15 @@ int powerwall_get_grid_status(struct altcp_pcb* pcb, char *auth_token, char *coo
     return(err);
 }
 
+/*!
+ * \brief Send battery level request to powerwall
+ *
+ * \param[in]   pcb             Protocol Control Block
+ * \param[in]   auth_token      authentication token
+ * \param[in]   cookies         cookies
+ * 
+ * \return 0 on success
+ */
 int powerwall_get_battery_percentage(struct altcp_pcb* pcb, char *auth_token, char *cookies)
 {
     int err = 0;   
@@ -1034,6 +1186,15 @@ int powerwall_get_battery_percentage(struct altcp_pcb* pcb, char *auth_token, ch
     return(err);
 }
 
+/*!
+ * \brief Send battery logout request to powerwall
+ *
+ * \param[in]   pcb             Protocol Control Block
+ * \param[in]   auth_token      authentication token
+ * \param[in]   cookies         cookies
+ * 
+ * \return 0 on success
+ */
 int powerwall_logout(struct altcp_pcb* pcb, char *auth_token, char *cookies)
 {
     int err = 0;   
@@ -1043,6 +1204,15 @@ int powerwall_logout(struct altcp_pcb* pcb, char *auth_token, char *cookies)
     return(err);
 }
 
+/*!
+ * \brief Send battery logout request to powerwall
+ *
+ * \param[in]   http_packet    received packet
+ * \param[in]   cookies        buffer to store cookies
+ * \param[in]   length         cookie buffer length
+ * 
+ * \return 0 on success
+ */
 int http_extract_cookies(const char *http_packet, char *cookies, int length)
 {
     int err = 0;
@@ -1107,7 +1277,13 @@ int http_extract_cookies(const char *http_packet, char *cookies, int length)
     return(err);
 }
 
-
+/*!
+ * \brief Wait for a received packet to be ready for processing with a timeout
+ *
+ * \param[in]   ticks    maximum wait time
+ * 
+ * \return 0 on success
+ */
 int wait_for_packet(TickType_t ticks)
 {
     int err = 0;   
@@ -1129,179 +1305,3 @@ int wait_for_packet(TickType_t ticks)
     return(err);
 }
 
-#ifdef USE_RTOS_MBEDTLS_INTERFACE
-// apparently the standard mbedtls code does not support lwip sockets, so would have to create that to use the interface below
-
-int bilbo(void)
-{
-    int ret = 1, len;
-    int exit_code = MBEDTLS_EXIT_FAILURE;
-    mbedtls_net_context server_fd;
-    uint32_t flags;
-    unsigned char buf[1024];
-    const char *pers = "ssl_client1";
-    // ip_addr_t ipaddr;
-    // char* char_ipaddr;
-
-    mbedtls_entropy_context entropy;
-    mbedtls_ctr_drbg_context ctr_drbg;
-    mbedtls_ssl_context ssl;
-    mbedtls_ssl_config conf;
-    mbedtls_x509_crt cacert;
-
-    /*
-     * 0. Initialize the RNG and the session data
-     */
-    mbedtls_net_init(&server_fd);
-    mbedtls_ssl_init(&ssl);
-    mbedtls_ssl_config_init(&conf);
-    mbedtls_x509_crt_init(&cacert);
-    mbedtls_ctr_drbg_init(&ctr_drbg);
-    mbedtls_entropy_init(&entropy);
-
-    mbedtls_printf("\n  . Seeding the random number generator...");
-    fflush(stdout);
-
-
-    if ((ret = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy,
-                                     (const unsigned char *) pers,
-                                     strlen(pers))) != 0) {
-        mbedtls_printf(" failed\n  ! mbedtls_ctr_drbg_seed returned %d\n", ret);
-        return(1);
-    }
-
-    mbedtls_printf(" ok\n");    
-
-    //HERE LOADING THE CERTIFICATE WAS LEFT OUT -- see ssl_client1.c for original code
-
-    /*
-     * 1. Start the connection
-     */
-    mbedtls_printf("  . Connecting to tcp/%s/%s...", PICOHTTPS_HOSTNAME, "443");
-    fflush(stdout);
-
-    if ((ret = mbedtls_net_connect(&server_fd, PICOHTTPS_HOSTNAME,
-        "443", MBEDTLS_NET_PROTO_TCP)) != 0) {
-        mbedtls_printf(" failed\n  ! mbedtls_net_connect returned %d\n\n", ret);
-        return(2);
-    }
-
-    mbedtls_printf(" ok\n");
-
-     /*
-     * 2. Setup stuff
-     */
-    mbedtls_printf("  . Setting up the SSL/TLS structure...");
-    fflush(stdout);
-
-    if ((ret = mbedtls_ssl_config_defaults(&conf,
-                                           MBEDTLS_SSL_IS_CLIENT,
-                                           MBEDTLS_SSL_TRANSPORT_STREAM,
-                                           MBEDTLS_SSL_PRESET_DEFAULT)) != 0) {
-        mbedtls_printf(" failed\n  ! mbedtls_ssl_config_defaults returned %d\n\n", ret);
-        return(3);
-    }
-
-    mbedtls_printf(" ok\n");
-
-    /* OPTIONAL is not optimal for security,
-     * but makes interop easier in this simplified example */
-    mbedtls_ssl_conf_authmode(&conf, MBEDTLS_SSL_VERIFY_NONE);
-    //mbedtls_ssl_conf_ca_chain(&conf, &cacert, NULL);
-    mbedtls_ssl_conf_rng(&conf, mbedtls_ctr_drbg_random, &ctr_drbg);
-    //mbedtls_ssl_conf_dbg(&conf, my_debug, stdout);
-
-    if ((ret = mbedtls_ssl_setup(&ssl, &conf)) != 0) {
-        mbedtls_printf(" failed\n  ! mbedtls_ssl_setup returned %d\n\n", ret);
-        return(4);
-    }
-
-    if ((ret = mbedtls_ssl_set_hostname(&ssl, PICOHTTPS_HOSTNAME)) != 0) {
-        mbedtls_printf(" failed\n  ! mbedtls_ssl_set_hostname returned %d\n\n", ret);
-        return(5);
-    }
-
-    mbedtls_ssl_set_bio(&ssl, &server_fd, mbedtls_net_send, mbedtls_net_recv, NULL);
-
-    /*
-     * 4. Handshake
-     */
-    mbedtls_printf("  . Performing the SSL/TLS handshake...");
-    fflush(stdout);
-
-    while ((ret = mbedtls_ssl_handshake(&ssl)) != 0) {
-        if (ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE) {
-            mbedtls_printf(" failed\n  ! mbedtls_ssl_handshake returned -0x%x\n\n",
-                           (unsigned int) -ret);
-        return(6);
-        }
-    }
-
-    mbedtls_printf(" ok\n");
-
-    //HERE CHECKING THE CERTIFICATE WAS LEFT OUT -- see ssl_client1.c for original code
-
-    /*
-     * 3. Write the GET request
-     */
-    mbedtls_printf("  > Write to server:");
-    fflush(stdout);
-
-    len = sprintf((char *) buf, GET_REQUEST);
-
-    while ((ret = mbedtls_ssl_write(&ssl, buf, len)) <= 0) {
-        if (ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE) {
-            mbedtls_printf(" failed\n  ! mbedtls_ssl_write returned %d\n\n", ret);
-            return(7);
-        }
-    }
-
-    len = ret;
-    mbedtls_printf(" %d bytes written\n\n%s", len, (char *) buf);
-
-    /*
-     * 7. Read the HTTP response
-     */
-    mbedtls_printf("  < Read from server:");
-    fflush(stdout);
-
-    do {
-        len = sizeof(buf) - 1;
-        memset(buf, 0, sizeof(buf));
-        ret = mbedtls_ssl_read(&ssl, buf, len);
-
-        if (ret == MBEDTLS_ERR_SSL_WANT_READ || ret == MBEDTLS_ERR_SSL_WANT_WRITE) {
-            continue;
-        }
-
-        if (ret == MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY) {
-            break;
-        }
-
-        if (ret < 0) {
-            mbedtls_printf("failed\n  ! mbedtls_ssl_read returned %d\n\n", ret);
-            break;
-        }
-
-        if (ret == 0) {
-            mbedtls_printf("\n\nEOF\n\n");
-            break;
-        }
-
-        len = ret;
-        mbedtls_printf(" %d bytes read\n\n%s", len, (char *) buf);
-    } while (1);
-
-    mbedtls_ssl_close_notify(&ssl);
-
-
-    mbedtls_net_free(&server_fd);
-    //mbedtls_x509_crt_free(&cacert);
-    mbedtls_ssl_free(&ssl);
-    mbedtls_ssl_config_free(&conf);
-    mbedtls_ctr_drbg_free(&ctr_drbg);
-    mbedtls_entropy_free(&entropy);
-
-    return(0);
-}
-#endif
