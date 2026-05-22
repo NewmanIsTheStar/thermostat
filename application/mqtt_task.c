@@ -43,6 +43,7 @@
 //#include "powerwall.h"
 #include "pluto.h"
 //#include "tm1637.h"
+#include "thermostat.h"
 
 #define DISCOVERY_PAYLOAD_BUFFER_SIZE (2400)   // large payload sent to home assistant for automatic device discovery
 #define ALL_RELAYS (8)                         // message indicating all relay states need to be published
@@ -54,6 +55,24 @@ typedef struct
     int (*initialization)(void);
     bool initialization_complete;
 } MQTT_INITIALIZATION_T;
+
+typedef struct
+{
+    char topic_name[64];
+    uint32_t last_change_time;
+    uint32_t last_published_time;   
+} MQTT_TOPIC_STATUS_T;
+
+typedef enum
+{
+    TOPIC_MODE_STATE            = 0,
+    TOPIC_MODE_SET              = 1,
+    TOPIC_TEMPERATURE_CURRENT   = 2,
+    TOPIC_TEMPERATURE_SETPOINT  = 3,
+
+    NUM_TOPICS                  = 4
+} MQTT_TOPIC_ID_T;
+
 
 // prototypes -- mqttst_ prefix is used for local functions, whereas lwip functions use mqtt_ 
 int mqttst_sanitize_user_config(void);
@@ -70,10 +89,11 @@ void mqttst_publish_discovery(mqtt_client_t *client, void *arg);
 int mqttst_initialize_subscription(void);
 int mqttst_initialize_ha_discovery(void);
 int mqttst_initialize_ha_states(void);
-void mqttst_publish_state(int relay, mqtt_client_t *client, void *arg);
+int mqttst_initialize_topic_staus(void);
+void mqttst_publish_state(MQTT_TOPIC_ID_T topic_id, mqtt_client_t *client);
 int mqttst_construct_discovery_topic(char *buffer, size_t len);
 int mqttst_construct_discovery_payload(char *buffer, size_t len);
-void mqttst_publish_all_relay_states(mqtt_client_t *client, void *arg);
+void mqttst_publish_all_thermostat_states(mqtt_client_t *client, void *arg);
 int mqttst_wait(TickType_t timeout);
 void mqttst_queue_send(uint8_t message);
 int mqttst_initialize_queue(void);
@@ -87,12 +107,14 @@ extern WEB_VARIABLES_T web;
 // global variables
 MQTT_INITIALIZATION_T mqtt_initialization_table[] =
 {
+    {mqttst_initialize_topic_staus,               false},
     {mqttst_initialize_queue,                     false},     
     {mqttst_initialize_connection,                false}, 
     {mqttst_initialize_subscription,              false},  
     {mqttst_initialize_ha_discovery,              false}, 
     {mqttst_initialize_ha_states,                 false},                 
 };
+MQTT_TOPIC_STATUS_T mqtt_status_table[NUM_TOPICS];
 bool connection_initialized = false;
 bool discovery_initialized = false;
 bool states_initialized = false;
@@ -146,7 +168,7 @@ void mqtt_task(void *params)
                 // }
 
                 // publish all relay states
-                mqttst_publish_all_relay_states(mqtt_client, NULL);
+                mqttst_publish_all_thermostat_states(mqtt_client, NULL);
             }
         }
 
@@ -350,7 +372,7 @@ int mqttst_initialize_ha_states(void)
     {
         //printf("about to call publish all states\n");
 
-        mqttst_publish_all_relay_states(mqtt_client, NULL);
+        mqttst_publish_all_thermostat_states(mqtt_client, NULL);
         
         states_initialized = true;
 
@@ -509,7 +531,7 @@ void mqttst_start_sub(mqtt_client_t *client)
     cyw43_arch_lwip_end();
 
     // Subscribe
-    sprintf(topic, "relay-c-%02x-%02x-%02x-%02x-%02x-%02x/#", web.mac[0], web.mac[1], web.mac[2], web.mac[3], web.mac[4], web.mac[5]); 
+    sprintf(topic, "st-%02x-%02x-%02x-%02x-%02x-%02x/#", web.mac[0], web.mac[1], web.mac[2], web.mac[3], web.mac[4], web.mac[5]); 
     cyw43_arch_lwip_begin();   
     err = mqtt_subscribe(client, topic, 1, mqttst_sub_request_cb, NULL);    
     cyw43_arch_lwip_end();
@@ -625,51 +647,51 @@ void mqttst_publish_discovery(mqtt_client_t *client, void *arg)
     }
 }
 
-/*!
- * \brief Send relay state publication
- *
- * \param relay 0 - 7
- * 
- * \return nothing
- */
-void mqttst_publish_state(int relay, mqtt_client_t *client, void *arg)
-{
-    const char *pub_payload = "Pico2W Hello!";
-    err_t err;
-    u8_t qos = 2; // 0, 1, or 2
-    u8_t retain = 0;
-    char state[64];
-    char state_payload[8];
-    static MQTT_CALLBACK_ID_T state_arg = MQTT_CALLBACK_STATE_ID;
+// /*!
+//  * \brief Send relay state publication
+//  *
+//  * \param relay 0 - 7
+//  * 
+//  * \return nothing
+//  */
+// void mqttst_publish_state(int relay, mqtt_client_t *client, void *arg)
+// {
+//     const char *pub_payload = "Pico2W Hello!";
+//     err_t err;
+//     u8_t qos = 2; // 0, 1, or 2
+//     u8_t retain = 0;
+//     char state[64];
+//     char state_payload[8];
+//     static MQTT_CALLBACK_ID_T state_arg = MQTT_CALLBACK_STATE_ID;
 
-    CLIP(relay, 0, 7);
+//     CLIP(relay, 0, 7);
 
-    sprintf(state, "relay-s-%02x-%02x-%02x-%02x-%02x-%02x/%d/state", web.mac[0], web.mac[1], web.mac[2], web.mac[3], web.mac[4], web.mac[5], relay+1);
+//     sprintf(state, "relay-s-%02x-%02x-%02x-%02x-%02x-%02x/%d/state", web.mac[0], web.mac[1], web.mac[2], web.mac[3], web.mac[4], web.mac[5], relay+1);
 
-    if (web.rmtsw_relay_desired_state[relay])
-    {
-        sprintf(state_payload, "ON");
-    }
-    else
-    {
-        sprintf(state_payload, "OFF");
-    }
+//     if (web.rmtsw_relay_desired_state[relay])
+//     {
+//         sprintf(state_payload, "ON");
+//     }
+//     else
+//     {
+//         sprintf(state_payload, "OFF");
+//     }
 
-    // send state
-    retain = 0;
-    cyw43_arch_lwip_begin();
-    err = mqtt_publish(client, state, state_payload, strlen(state_payload), qos, retain, mqttst_pub_request_cb, &state_arg);
-    cyw43_arch_lwip_end();
+//     // send state
+//     retain = 0;
+//     cyw43_arch_lwip_begin();
+//     err = mqtt_publish(client, state, state_payload, strlen(state_payload), qos, retain, mqttst_pub_request_cb, &state_arg);
+//     cyw43_arch_lwip_end();
 
-    if(err != ERR_OK) 
-    {
-        printf("Publish state error: %d\n", err);
-        //send_syslog_message("mqtt", "publish state error %d", err);
-        application_restart(REBOOT_MQTT_F3);
-    }
+//     if(err != ERR_OK) 
+//     {
+//         printf("Publish state error: %d\n", err);
+//         //send_syslog_message("mqtt", "publish state error %d", err);
+//         application_restart(REBOOT_MQTT_F3);
+//     }
 
-    //printf("published new state. %s = %s\n", state, state_payload);
-}
+//     //printf("published new state. %s = %s\n", state, state_payload);
+// }
 
 /*!
  * \brief print home assistant discovery payload into callers buffer
@@ -686,41 +708,7 @@ int mqttst_construct_discovery_payload(char *buffer, size_t len)
 
     *buffer = 0;
 
-    // STRNCAT(buffer, "{\"dev\": {\"ids\": \"", len);
-    // sprintf(temp_string, "rs-%02x-%02x-%02x-%02x-%02x-%02x", web.mac[0], web.mac[1], web.mac[2], web.mac[3], web.mac[4], web.mac[5]);
-    // STRNCAT(buffer, temp_string, len);
-    // STRNCAT(buffer, "\",\"name\": \"", len); 
-    // STRNCAT(buffer, config.host_name, len);
-    // STRNCAT(buffer, "\"},\"o\": {\"name\":\"", len);
-    // STRNCAT(buffer, config.host_name, len);
-    // STRNCAT(buffer, "\",\"sw\": \"", len);
-    // STRNCAT(buffer, PLUTO_VER, len);
-    // STRNCAT(buffer, "\",\"url\": \"https://github.com/NewmanIsTheStar/remote-switch/wiki\"},\"cmps\": {", len);
-    // for(i=0; i<config.rmtsw_relay_max; i++)
-    // {
-    //     STRNCAT(buffer, "\"", len);
-    //     sprintf(temp_string, "rs-r%d-%02x-%02x-%02x-%02x-%02x-%02x", i+1, web.mac[0], web.mac[1], web.mac[2], web.mac[3], web.mac[4], web.mac[5]);
-    //     STRNCAT(buffer, temp_string, len);
-    //     STRNCAT(buffer, "\": {\"p\": \"switch\",\"command_topic\":\"", len);
-    //     sprintf(temp_string, "relay-c-%02x-%02x-%02x-%02x-%02x-%02x/%d/command", web.mac[0], web.mac[1], web.mac[2], web.mac[3], web.mac[4], web.mac[5], i+1);
-    //     STRNCAT(buffer, temp_string, len);
-    //     STRNCAT(buffer, "\",\"state_topic\":\"", len);
-    //     sprintf(temp_string, "relay-s-%02x-%02x-%02x-%02x-%02x-%02x/%d/state", web.mac[0], web.mac[1], web.mac[2], web.mac[3], web.mac[4], web.mac[5], i+1);
-    //     STRNCAT(buffer, temp_string, len);
-    //     STRNCAT(buffer, "\",\"unique_id\":\"", len);
-    //     sprintf(temp_string, "rs-id%d-%02x-%02x-%02x-%02x-%02x-%02x", i+1, web.mac[0], web.mac[1], web.mac[2], web.mac[3], web.mac[4], web.mac[5]);
-    //     STRNCAT(buffer, temp_string, len);
-    //     STRNCAT(buffer, "\",\"name\":\"", len);   
-    //     STRNCAT(buffer, config.rmtsw_relay_name[i], len); 
-    //     STRNCAT(buffer, "\"}", len);         
-    //     if (i < (config.rmtsw_relay_max -1))
-    //     {
-    //         STRNCAT(buffer, ",", len);  // home assistant is very fussy about trailing commas
-    //     }
-        
-    // }
-    // STRNCAT(buffer, "},\"qos\": 0}", len);
-/*
+/* TEMPLATE
 {
   "name": "Thermostat",
   "unique_id": "mqtt_thermostat_12345",
@@ -737,11 +725,27 @@ int mqttst_construct_discovery_payload(char *buffer, size_t len)
     STRNCAT(buffer, "{\"name\": \"Thermostat\",\"unique_id\":\"", len);
     sprintf(temp_string, "st-%02x-%02x-%02x-%02x-%02x-%02x", web.mac[0], web.mac[1], web.mac[2], web.mac[3], web.mac[4], web.mac[5]);
     STRNCAT(buffer, temp_string, len);
-    STRNCAT(buffer, "\",\"device_class\":\"climate\",\"modes\":[\"off\",\"heat\",\"cool\",\"auto\"],\"mode_state_topic\":\"house/hvac/mode/state\",", len);
-    STRNCAT(buffer, "\"mode_command_topic\":\"house/hvac/mode/set\",", len);
-    STRNCAT(buffer, "\"current_temperature_topic\":\"house/hvac/temperature/current\",", len);
-    STRNCAT(buffer, "\"temperature_state_topic\":\"house/hvac/temperature/setpoint\",", len);
-    STRNCAT(buffer, "\"temperature_commadn_topic\":\"house/hvac/temperature/setpoint\"}", len);
+    STRNCAT(buffer, "\",\"device_class\":\"climate\",\"modes\":[\"off\",\"heat\",\"cool\",\"auto\"],\"mode_state_topic\":\"", len);
+    sprintf(temp_string, "st-%02x-%02x-%02x-%02x-%02x-%02x/hvac/mode/state", web.mac[0], web.mac[1], web.mac[2], web.mac[3], web.mac[4], web.mac[5]);
+    STRNCAT(buffer, temp_string, len);
+    STRNCAT(buffer, "\",", len);
+    STRNCAT(buffer, "\"mode_command_topic\":\"", len);
+    sprintf(temp_string, "st-%02x-%02x-%02x-%02x-%02x-%02x/hvac/mode/set", web.mac[0], web.mac[1], web.mac[2], web.mac[3], web.mac[4], web.mac[5]);
+    STRNCAT(buffer, temp_string, len);
+    STRNCAT(buffer, "\",", len);
+    STRNCAT(buffer, "\"current_temperature_topic\":\"", len);
+    sprintf(temp_string, "st-%02x-%02x-%02x-%02x-%02x-%02x/hvac/temperature/current", web.mac[0], web.mac[1], web.mac[2], web.mac[3], web.mac[4], web.mac[5]);
+    STRNCAT(buffer, temp_string, len);
+    STRNCAT(buffer, "\",", len);
+    STRNCAT(buffer, "\"temperature_state_topic\":\"", len);
+    sprintf(temp_string, "st-%02x-%02x-%02x-%02x-%02x-%02x/hvac/temperature/setpoint", web.mac[0], web.mac[1], web.mac[2], web.mac[3], web.mac[4], web.mac[5]);
+    STRNCAT(buffer, temp_string, len);
+    STRNCAT(buffer, "\",", len);
+    STRNCAT(buffer, "\"temperature_command_topic\":\"", len);
+    sprintf(temp_string, "st-%02x-%02x-%02x-%02x-%02x-%02x/hvac/temperature/setpoint", web.mac[0], web.mac[1], web.mac[2], web.mac[3], web.mac[4], web.mac[5]);
+    STRNCAT(buffer, temp_string, len);
+    STRNCAT(buffer, "\"}", len);
+
     return(err);
 }
 
@@ -774,33 +778,53 @@ int mqttst_construct_discovery_topic(char *buffer, size_t len)
 }
 
 /*!
- * \brief send all relay states to the mqtt broker sequentially
+ * \brief send all thermostat states to the mqtt broker sequentially
  *
  * \param params unused garbage
  * 
  * \return nothing
  */
-void mqttst_publish_all_relay_states(mqtt_client_t *client, void *arg)
+void mqttst_publish_all_thermostat_states(mqtt_client_t *client, void *arg)
 {
-    int i = 0;
     int j = 0;
 
     states_outstanding = 0;
 
-    // for(i=0; i<config.rmtsw_relay_max; i++)
-    // {
-    //     states_outstanding++;
-    //     mqttst_publish_state(i, client, arg);
+    if (j < 100)
+    {
+        states_outstanding++;
+        mqttst_publish_state(TOPIC_MODE_STATE, client);
+        
+        // wait for callback to zero states_outstanding
+        for(j=0; (j < 100) && states_outstanding; j++)
+        {
+            SLEEP_MS(50);
+        }             
+    }   
 
-    //     // sleep until callback complete or 5 seconds elapse
-    //     for(j=0; (j < 100) && states_outstanding; j++)
-    //     {
-    //         SLEEP_MS(50);
-    //     }
+        if (j < 100)
+    {
+        states_outstanding++;
+        mqttst_publish_state(TOPIC_TEMPERATURE_CURRENT, client);
 
-    //     // abort if we did not get callback within 5 seconds
-    //     if (j>=100) break;
-    // }
+        // wait for callback to zero states_outstanding
+        for(j=0; (j < 100) && states_outstanding; j++)
+        {
+            SLEEP_MS(50);
+        }             
+    }  
+
+    if (j < 100)
+    {
+        states_outstanding++;
+        mqttst_publish_state(TOPIC_TEMPERATURE_SETPOINT, client);
+                    
+        // wait for callback to zero states_outstanding        
+        for(j=0; (j < 100) && states_outstanding; j++)
+        {
+            SLEEP_MS(50);
+        }             
+    }      
 }
 
 /*!
@@ -832,7 +856,7 @@ void mqttst_publish_relay_state(int relay, mqtt_client_t *client, void *arg)
  * 
  * \return nothing
  */
-void mqttst_relay_refresh(void)
+void mqttst_thermostat_refresh(void)
 {
     // relay states have changed
     mqttst_queue_send(ALL_RELAYS);
@@ -891,4 +915,91 @@ int mqttst_initialize_queue(void)
     mqtt_queue_initialized = true;
 
     return(err);
+}
+
+/*!
+ * \brief initialize a topic status table
+ * 
+ * \return nothing
+ */
+int mqttst_initialize_topic_staus(void)
+{
+    int err = 0;
+    int i;
+    uint32_t now;
+
+    now = unix_time;
+
+    sprintf(mqtt_status_table[TOPIC_MODE_STATE].topic_name,             "st-%02x-%02x-%02x-%02x-%02x-%02x/hvac/mode/state",             web.mac[0], web.mac[1], web.mac[2], web.mac[3], web.mac[4], web.mac[5]);
+    sprintf(mqtt_status_table[TOPIC_MODE_SET].topic_name,               "st-%02x-%02x-%02x-%02x-%02x-%02x/hvac/mode/set",               web.mac[0], web.mac[1], web.mac[2], web.mac[3], web.mac[4], web.mac[5]);    
+    sprintf(mqtt_status_table[TOPIC_TEMPERATURE_CURRENT].topic_name,    "st-%02x-%02x-%02x-%02x-%02x-%02x/hvac/temperature/current",    web.mac[0], web.mac[1], web.mac[2], web.mac[3], web.mac[4], web.mac[5]);    
+    sprintf(mqtt_status_table[TOPIC_TEMPERATURE_SETPOINT].topic_name,   "st-%02x-%02x-%02x-%02x-%02x-%02x/hvac/temperature/setpoint",   web.mac[0], web.mac[1], web.mac[2], web.mac[3], web.mac[4], web.mac[5]);
+
+    for(i=0; i < NUM_TOPICS; i++)
+    {
+        mqtt_status_table[i].last_change_time    = now;
+        mqtt_status_table[i].last_published_time = now;
+    }
+
+    return(err);
+}
+
+
+/*!
+ * \brief Send relay state publication
+ *
+ * \param topic  topic to publish
+ * 
+ * \return nothing
+ */
+void mqttst_publish_state(MQTT_TOPIC_ID_T topic_id, mqtt_client_t *client)
+{
+    const char *pub_payload = "Pico2W Hello!";
+    err_t err = 0;
+    u8_t qos = 2; // 0, 1, or 2
+    u8_t retain = 0;
+    char state[64];
+    char state_payload[64];
+    static MQTT_CALLBACK_ID_T state_arg = MQTT_CALLBACK_STATE_ID;
+
+
+    //printf("published new state. %s = %s\n", state, state_payload);
+
+    switch(topic_id)
+    {
+    case TOPIC_MODE_STATE:        
+        thermostat_get_mode_string(web.thermostat_effective_mode, state_payload, sizeof(state_payload));
+        break;
+    case TOPIC_MODE_SET:
+        err = 1;
+        break; 
+    case TOPIC_TEMPERATURE_CURRENT:
+        snprintf(state_payload, sizeof(state_payload), "%d", web.thermostat_temperature);
+        break;
+    case TOPIC_TEMPERATURE_SETPOINT:
+        snprintf(state_payload, sizeof(state_payload), "%d", web.thermostat_set_point);
+        break;
+    default:
+        err = 2;
+        break;
+    }
+
+    if (!err)
+    {
+        STRNCPY(state, mqtt_status_table[topic_id].topic_name, sizeof(state));
+
+        // send state
+        retain = 0;
+        cyw43_arch_lwip_begin();
+        err = mqtt_publish(client, state, state_payload, strlen(state_payload), qos, retain, mqttst_pub_request_cb, &state_arg);
+        cyw43_arch_lwip_end();
+
+        if(err != ERR_OK) 
+        {
+            printf("Publish state error: %d\n", err);
+            //send_syslog_message("mqtt", "publish state error %d", err);
+            application_restart(REBOOT_MQTT_F3);
+        }
+
+    }
 }

@@ -889,3 +889,46 @@ int thermostat_relay_lockout_stop(void)
       
     return(0);
 }
+
+
+/*!
+ * \brief thermostat_get_mode_string
+ * 
+ * \return number of characters output
+ */
+int thermostat_get_mode_string(THERMOSTAT_MODE_T mode, char *string, int len)
+{
+    int printed = 0;
+
+    switch(mode)
+    {
+    case HVAC_AUTO:
+        printed = snprintf(string, len, "Auto");
+        break;
+    case HVAC_HEATING_ONLY:
+        printed = snprintf(string, len, "Heat Only");
+        break;
+    case HVAC_COOLING_ONLY:
+        printed = snprintf(string, len, "Cool Only");
+        break;                                            
+    case HVAC_FAN_ONLY:
+        printed = snprintf(string, len, "Fan Only");
+        break;
+    case HVAC_HEAT_AND_COOL:
+        printed = snprintf(string, len, "Heat & Cool");
+        break;                          
+        break;              
+    case HVAC_OFF:
+        printed = snprintf(string, len, "Off");            
+        break;
+    default:
+        printed = snprintf(string, len, "mystery mode (%d)", mode);
+        printf("unrecognized mode passed to thermostat_get_mode_string()\n");
+        break;
+    }
+
+    // force zero termination
+    string[len] = 0;
+
+    return(printed);
+}

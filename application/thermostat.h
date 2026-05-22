@@ -120,7 +120,7 @@ bool schedule_mode_valid(int mode);
 int initialize_hvac_control(void);
 THERMOSTAT_STATE_T control_thermostat_relays(long int temperaturex10);
 int relay_gpio_enable(bool enable);
-
+int thermostat_get_mode_string(THERMOSTAT_MODE_T mode, char *string, int len);
 
 
 #endif

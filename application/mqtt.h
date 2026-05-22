@@ -22,7 +22,7 @@ typedef enum
 
 // mqtt_task.c
 void mqtt_task(__unused void *params);
-void mqttst_relay_refresh(void);
+void mqttst_thermostat_refresh(void);
 
 
 

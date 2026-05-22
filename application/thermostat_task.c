@@ -42,6 +42,7 @@
 #include "powerwall.h"
 #include "pluto.h"
 #include "tm1637.h"
+#include "mqtt.h"
 
 // typdedefs
 typedef struct
@@ -146,6 +147,9 @@ void thermostat_task(void *params)
                 // update web ui
                 //web.thermostat_temperature = filter_temperature_noise(temperaturex10);
                 web.thermostat_temperature = temperaturex10;
+
+                // update mqtt
+                mqttst_thermostat_refresh();
             }
             
             // check powerwall status
