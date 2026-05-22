@@ -372,6 +372,11 @@ int display_brightness(int brightness)
     return(err);
 }
 
+int display_get_base_temperature(void)
+{
+    return(front_panel_base_temperaturex10);
+}
+
 int display_set_base_temperature(int base_temperature)
 {
     int err = 0;

@@ -39,6 +39,7 @@ https://github.com/marceloalcocer/picohttps/blob/main/picohttps.c         */
 
 
 #define GET_REQUEST "GET / HTTP/1.0\r\n\r\n"
+#define POWERWALL_LOCKOUT_TIME (24*60*60)
 
 // types
 typedef enum
@@ -53,7 +54,8 @@ typedef enum
     PW_CONFIRM_BATTERY,
     PW_LOGOUT,
     PW_CONFIRM_LOGOUT,
-    PW_TEAR_DOWN
+    PW_TEAR_DOWN,
+    PW_LOCKOUT
 } PW_STATE_T;
 
 // prototypes
@@ -79,8 +81,10 @@ int powerwall_get_battery_percentage(struct altcp_pcb* pcb, char *auth_token, ch
 int powerwall_logout(struct altcp_pcb* pcb, char *auth_token, char *cookies);
 int http_extract_cookies(const char *http_packet, char *cookies, int length);
 int wait_for_packet(TickType_t ticks);
+int powerwall_sanitize_config(void);
 
 // external variables
+extern uint32_t unix_time;
 extern NON_VOL_VARIABLES_T config;
 extern WEB_VARIABLES_T web;
 extern char jsonp_value[255][128];
@@ -90,48 +94,32 @@ extern NON_VOL_VARIABLES_T config;
 char copy_buffer[2048];
 int copy_ready = 0;
 JSON_PARSER_CONTEXT_T powerwall_parser_context;
+uint32_t powerwall_lockout_start;
 
 
 /*!
- * \brief Remove first and last double quotes if present.  Alteration occurs within the  passed buffer.
+ * \brief Wrapper to pace powerwall polling
  *
- * \param[in]   token       buffer containing string
- * \param[in]   length      length of buffer
  * 
- * \return 0 if no quotes removed, 1 if quotes removed
+ * \return nothing
  */
-int strip_first_last_quotes(char *token, int length)
+void powerwall_check(void)
 {
-    int err = 0;
-    int i;
+    static bool first_poll = true; 
+    static TickType_t last_poll= 0;
+    TickType_t now = 0;
 
-    if (token && (length > 2)) 
+    now = xTaskGetTickCount();
+
+    // poll powerwall once every 15 ninutes
+    if (((now - last_poll) > 1000*60*15) || first_poll)
     {
-        // we presume that first and last characters are double quotes
-        if (token[0] == '"')
-        {
-            //printf("start quote strip length = %d\n", length);
-            for (i=0; i < length-2; i++)
-            {
-                //printf("checking: %d[%c][%c]\n", i, token[i+1], token[i+2]);
-                if (((token[i+1] == '"') && (token[i+2] == 0)) ||
-                     (token[i+1] == 0))
-                {
-                    token[i] = 0;
-                    err = 1;
-                    break;
-                }
-                else
-                {
-                    token[i] = token[i+1];
-                }
-            }
-        }
+        powerwall_poll();
+
+        last_poll = now;
+        first_poll = false;
     }
-
-    return(err);
 }
-
 
 /*!
  * \brief State machine to read powerwall battery level
@@ -142,7 +130,7 @@ int strip_first_last_quotes(char *token, int length)
 void powerwall_poll(void)
 {
     static PW_STATE_T powerwall_connection_state = PW_INITIATE;
-    static int retry = 0;
+    static int powerwall_num_access_failures = 0;
     const int max_retries = 2;
     struct altcp_pcb* pcb = NULL;
     char *start_of_json = NULL;
@@ -152,14 +140,16 @@ void powerwall_poll(void)
     char grid_status[256];
     char battery_percentage[256];    
     char authorization_token[256];
+    bool access_failure = false;
 
-    //TODO: -- sanity check on config, prevent multiple login failures
+    powerwall_sanitize_config();
 
     // check if retry limit reached
-    if (retry >= max_retries)
+    if (powerwall_num_access_failures >= max_retries)
     {
-        powerwall_connection_state = PW_TEAR_DOWN;
-        retry = 0;
+        powerwall_connection_state = PW_LOCKOUT;
+        powerwall_lockout_start = unix_time;
+        powerwall_num_access_failures = 0;
     }
 
     switch(powerwall_connection_state)
@@ -194,24 +184,26 @@ void powerwall_poll(void)
             if(!connect_to_host(&ipaddr, &pcb))
             {
                 printf("Failed to connect to powerwall at https://%s:%d\n", char_ipaddr, LWIP_IANA_PORT_HTTPS);
-                retry++;
+                
+                access_failure = true;
                 break;
             }
             else
             {
                 //printf("Connected to https://%s:%d\n", char_ipaddr, LWIP_IANA_PORT_HTTPS);
-                retry = 0;
+                //retry = 0;
                 powerwall_connection_state = PW_LOGIN;
             }
 
             // deliberate fall through
 
-        case PW_LOGIN:
+        case PW_LOGIN:                                   
             // send login request to powerwall
             //printf("Sending login request\n");
             if(!powerwall_login(pcb))
             {        
                 printf("Failed to send powerwall login request\n");
+                access_failure = true;
 
                 // tear down connection
                 tear_down(pcb);
@@ -253,6 +245,7 @@ void powerwall_poll(void)
             if (jsonp_get_value(&powerwall_parser_context, "root.\"token\"", authorization_token, sizeof(authorization_token), false))
             {
                 printf("Powerwall login failed.\n");
+                access_failure = true;
 
                 jsonp_dump_key_value_pairs(&powerwall_parser_context);
                 //jsonp_dump_tokens(&powerwall_parser_context);
@@ -268,7 +261,7 @@ void powerwall_poll(void)
             {
                 strip_first_last_quotes(authorization_token, sizeof(authorization_token));
                 //printf("Login successful.  Authorization token is = %s\n", authorization_token);
-                retry = 0;
+                //retry = 0;
                 powerwall_connection_state = PW_GET_GRID_STATUS; 
             } 
            
@@ -280,6 +273,7 @@ void powerwall_poll(void)
             if(!powerwall_get_grid_status(pcb, authorization_token, cookie))
             {        
                 printf("Failed to send powewall grid status request\n");
+                access_failure = true;
 
                 // tear down connection
                 tear_down(pcb);
@@ -317,6 +311,8 @@ void powerwall_poll(void)
             if (jsonp_get_value(&powerwall_parser_context, "root.\"grid_status\"", grid_status, sizeof(grid_status), false))
             {
                 printf("FAILED TO GET powerwall GRID STATUS\n");
+                access_failure = true;
+
                 if (web.powerwall_grid_status == GRID_UP)
                 {
                     // only move to unknown if grid was up, if grid was down continue to assume it is down unitl a response is received
@@ -345,7 +341,7 @@ void powerwall_poll(void)
                 
                 //printf("==> %d\n", web.powerwall_grid_up);
 
-                retry = 0;
+                //retry = 0;
                 //powerwall_connection_state = PW_LOGOUT;
             }
 
@@ -357,6 +353,7 @@ void powerwall_poll(void)
             if(!powerwall_get_battery_percentage(pcb, authorization_token, cookie))
             {        
                 printf("Failed to send powerwall battery status request\n");
+                access_failure = true;
 
                 // tear down connection
                 tear_down(pcb);
@@ -394,6 +391,7 @@ void powerwall_poll(void)
             if (jsonp_get_value(&powerwall_parser_context, "root.\"percentage\"", battery_percentage, sizeof(battery_percentage), false))
             {
                 printf("FAILED TO GET powerwall BATTERY PERCENTAGE\n");
+                access_failure = true;
 
                 // tear down connection
                 tear_down(pcb);
@@ -411,7 +409,7 @@ void powerwall_poll(void)
 
                 //printf("==> %d\n", web.powerwall_battery_percentage);
 
-                retry = 0;
+                powerwall_num_access_failures = 0;  // <<<<<<<<<<<<<<<<<<<< sucesss so no need to retry
                 //powerwall_connection_state = PW_LOGOUT;
             }
             
@@ -464,9 +462,27 @@ void powerwall_poll(void)
             tear_down(pcb);
             pcb = NULL;
 
-            retry = 0;  
+            //retry = 0;  
             powerwall_connection_state = PW_INITIATE;      
             break;
+
+        case PW_LOCKOUT:
+            tear_down(pcb);
+            pcb = NULL;
+           
+            // end lockout after 24 hours -- note that the lockout state will also end if the user alters the configuration
+            if ((unix_time - powerwall_lockout_start) < POWERWALL_LOCKOUT_TIME)
+            {
+                 powerwall_connection_state = PW_INITIATE; 
+                 powerwall_num_access_failures = 0;
+                 access_failure = false;
+            }
+            break;            
+    }
+
+    if (access_failure)
+    {
+        powerwall_num_access_failures++;
     }
 
     // reset parser and powerwall status in preparation for next poll
@@ -479,29 +495,7 @@ void powerwall_poll(void)
     return;
 }
 
-/*!
- * \brief Warpper to pace powerwall polling
- *
- * 
- * \return nothing
- */
-void powerwall_check(void)
-{
-    static bool first_poll = true; 
-    static TickType_t last_poll= 0;
-    TickType_t now = 0;
 
-    now = xTaskGetTickCount();
-
-    // poll powerwall once every 15 ninutes
-    if (((now - last_poll) > 1000*60*15) || first_poll)
-    {
-        powerwall_poll();
-
-        last_poll = now;
-        first_poll = false;
-    }
-}
 
 /*!
  * \brief Free all resources allocated for https connection
@@ -1286,7 +1280,7 @@ int http_extract_cookies(const char *http_packet, char *cookies, int length)
  */
 int wait_for_packet(TickType_t ticks)
 {
-    int err = 0;   
+    int err = 1;   
     TickType_t wait_time = 0;
     static int last_copy_ready = 0;
 
@@ -1295,6 +1289,7 @@ int wait_for_packet(TickType_t ticks)
         if (last_copy_ready != copy_ready)
         {
             last_copy_ready = copy_ready;
+            err = 0;
             break;
         }
 
@@ -1305,3 +1300,68 @@ int wait_for_packet(TickType_t ticks)
     return(err);
 }
 
+/*!
+ * \brief Sanitize powerwall configuration
+ * 
+ * \return 0 on success
+ */
+int powerwall_sanitize_config(void)
+{
+    // ensure strings are terminated
+    config.powerwall_ip[sizeof(config.powerwall_ip)-1] = 0;
+    config.powerwall_hostname[sizeof(config.powerwall_hostname)-1] = 0;
+    config.powerwall_password[sizeof(config.powerwall_password)-1] = 0;
+    
+    return(0);
+}
+
+/*!
+ * \brief Terminate powerwall locout
+ * 
+ * \return 0 on success
+ */
+int powerwall_terminate_lockout(void)
+{
+    powerwall_lockout_start = unix_time - POWERWALL_LOCKOUT_TIME;
+}
+
+
+/*!
+ * \brief Remove first and last double quotes if present.  Alteration occurs within the  passed buffer.
+ *
+ * \param[in]   token       buffer containing string
+ * \param[in]   length      length of buffer
+ * 
+ * \return 0 if no quotes removed, 1 if quotes removed
+ */
+int strip_first_last_quotes(char *token, int length)
+{
+    int err = 0;
+    int i;
+
+    if (token && (length > 2)) 
+    {
+        // we presume that first and last characters are double quotes
+        if (token[0] == '"')
+        {
+            //printf("start quote strip length = %d\n", length);
+            for (i=0; i < length-2; i++)
+            {
+                //printf("checking: %d[%c][%c]\n", i, token[i+1], token[i+2]);
+                if (((token[i+1] == '"') && (token[i+2] == 0)) ||
+                     (token[i+1] == 0))
+                {
+                    token[i] = 0;
+                    err = 1;
+                    break;
+                }
+                else
+                {
+                    token[i] = token[i+1];
+                }
+            }
+        }
+    }
+
+    return(err);
+}

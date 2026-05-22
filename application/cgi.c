@@ -28,6 +28,7 @@
 #include "config.h"
 //#include "led_strip.h"
 #include "thermostat.h"
+#include "powerwall.h"
 #include "worker_tasks.h"
 #include "pluto.h"
 
@@ -2720,6 +2721,7 @@ const char * cgi_powerwall_handler(int iIndex, int iNumParams, char *pcParam[], 
     int i = 0;
     char *param = NULL;
     char *value = NULL; 
+    bool powerwall_access_parameter_change = false;
 
     // despicable but necessary as we only receive parameter when checked
     config.weather_station_enable = 0;
@@ -2740,11 +2742,13 @@ const char * cgi_powerwall_handler(int iIndex, int iNumParams, char *pcParam[], 
             if (strcasecmp("pwip", param) == 0)
             {
                 STRNCPY(config.powerwall_ip, value, sizeof(config.powerwall_ip));
+                powerwall_access_parameter_change = true;
             }
 
             if (strcasecmp("pwhost", param) == 0)
             {
                 STRNCPY(config.powerwall_hostname, value, sizeof(config.powerwall_hostname));
+                powerwall_access_parameter_change = true;
             }      
             
             if (strcasecmp("pwpass", param) == 0)
@@ -2752,13 +2756,13 @@ const char * cgi_powerwall_handler(int iIndex, int iNumParams, char *pcParam[], 
                 if (strcasecmp(value, "********") != 0)
                 {
                     STRNCPY(config.powerwall_password, value, sizeof(config.powerwall_password));
+                    powerwall_access_parameter_change = true;
                 }
             }              
             
             if (strcasecmp("pwgdhd", param) == 0)
             {
                 config.grid_down_heating_setpoint_decrease = get_int_with_tenths_from_string(value);  
-                printf("CGI setting grid down heating setpoint decrease to %d\n", config.grid_down_heating_setpoint_decrease);
             }
 
             if (strcasecmp("pwgdci", param) == 0)
@@ -2788,6 +2792,12 @@ const char * cgi_powerwall_handler(int iIndex, int iNumParams, char *pcParam[], 
         }
 
         i++;
+    }
+
+    if (powerwall_access_parameter_change)
+    {
+        // terminate any lockout condition that might be in place due to failed connection/login attempts
+        powerwall_terminate_lockout();
     }
 
     // Send the next page back to the user
@@ -3267,10 +3277,82 @@ const char * cgi_advanced_settings(int iIndex, int iNumParams, char *pcParam[], 
     config_changed();
     return "/t_advanced.shtml";
 }
- 
+
+/*!
+ * \brief cgi handler
+ *
+ * \param[in]  iIndex       index of cgi handler in cgi_handlers table
+ * \param[in]  iNumParams   number of parameters
+ * \param[in]  pcParam      parameter name
+ * \param[in]  pcValue      parameter value 
+ * 
+ * \return nothing
+ */
+const char * cgi_mqtt_handler(int iIndex, int iNumParams, char *pcParam[], char *pcValue[])
+{
+    int i = 0;
+    //int whole_part = 0;
+    //int tenths_part = 0;
+    char *param = NULL;
+    char *value = NULL;
+    //int new_value = 0;
+       
+    //dump_parameters(iIndex, iNumParams, pcParam, pcValue);
+
+    i = 0;
+    while (i < iNumParams)
+    {
+        param = pcParam[i];
+        value = pcValue[i];
+
+        if (param && value)
+        {
+            //printf("Parameter: %s has Value: %s\n", param, value);
+            
+            if (strcasecmp("mquser", param) == 0)
+            {
+                STRNCPY(config.mqtt_user, value, sizeof(config.mqtt_user));
+            }
+
+            if (strcasecmp("mqpass", param) == 0)
+            {
+                if (strcasecmp(value, "********") != 0)
+                {
+                    STRNCPY(config.mqtt_password, value, sizeof(config.mqtt_password));
+                }
+            }   
+
+            if (strcasecmp("mqaddr", param) == 0)
+            {
+                STRNCPY(config.mqtt_broker_address, value, sizeof(config.mqtt_broker_address));
+            }            
+        }
+
+        i++;
+    }
+
+
+    // Send the next page back to the user
+    config_changed();
+    return "/mqtt.shtml";
+}
 
 // CGI requests and their respective handlers  --Add new entires at bottom--
 static const tCGI cgi_handlers[] = {
+    // *** system handlers start ***
+    {"/gpio_default.cgi",               cgi_gpio_default_handler}, 
+    {"/wificountry.cgi",                cgi_wificountry_handler},      
+    {"/network.cgi",                    cgi_network_handler}, 
+    {"/reboot.cgi",                     cgi_reboot_handler},              
+    {"/time.cgi",                       cgi_time_handler},
+    {"/syslog.cgi",                     cgi_syslog_handler}, 
+    {"/mqtt.cgi",                       cgi_mqtt_handler},    
+    {"/units.cgi",                      cgi_units_handler},   
+    {"/swload.cgi",                     cgi_software_load_handler},
+    {"/personality.cgi",                cgi_personality_handler},                 
+    // *** system handlers end ***
+
+    // *** application handlers start ***  
     {"/schedule.cgi",                   cgi_schedule_handler},
     {"/sunday.cgi",                     cgi_weekday_handler},   //-START- days of week must be consecutive AND start at index 1
     {"/monday.cgi",                     cgi_weekday_handler},
@@ -3285,21 +3367,21 @@ static const tCGI cgi_handlers[] = {
     {"/mininc.cgi",                     cgi_inc_minute_handler},  
     {"/hrdec.cgi",                      cgi_dec_hour_handler}, 
     {"/mindec.cgi",                     cgi_dec_minute_handler}, 
-    {"/time.cgi",                       cgi_time_handler},      
+    // {"/time.cgi",                       cgi_time_handler},      
     {"/ecowitt.cgi",                    cgi_ecowitt_handler},   
-    {"/network.cgi",                    cgi_network_handler},    
-    {"/reboot.cgi",                     cgi_reboot_handler},    
+    // {"/network.cgi",                    cgi_network_handler},    
+    // {"/reboot.cgi",                     cgi_reboot_handler},    
     // {"/aled.cgi",                       cgi_led_handler},   
     {"/psched.cgi",                     cgi_portrait_schedule_handler},     
     {"/dsched.cgi",                     cgi_day_schedule_handler},   
     {"/mood.cgi",                       cgi_mood_handler},       
-    {"/syslog.cgi",                     cgi_syslog_handler}, 
-    {"/units.cgi",                      cgi_units_handler},   
-    {"/swload.cgi",                     cgi_software_load_handler},     
+    // {"/syslog.cgi",                     cgi_syslog_handler}, 
+    // {"/units.cgi",                      cgi_units_handler},   
+    // {"/swload.cgi",                     cgi_software_load_handler},     
     {"/remote_led_strips.cgi",          cgi_remote_led_strips},  
-    {"/personality.cgi",                cgi_personality_handler},   
+    // {"/personality.cgi",                cgi_personality_handler},   
     {"/relay.cgi",                      cgi_relay_handler}, 
-    {"/wificountry.cgi",                cgi_wificountry_handler}, 
+    // {"/wificountry.cgi",                cgi_wificountry_handler}, 
     // {"/relay_test_stop.cgi",            cgi_relay_test_stop_handler}, 
     // {"/relay_test_start.cgi",           cgi_relay_test_start_handler},     
     {"/led_pattern.cgi",                cgi_led_pattern_handler},   
@@ -3315,9 +3397,10 @@ static const tCGI cgi_handlers[] = {
     {"/powerwall.cgi",                  cgi_powerwall_handler},   
     {"/t_copy.cgi",                     cgi_thermostat_copy_handler},
     {"/t_gpio.cgi",                     cgi_thermostat_gpio_handler},   
-    {"/gpio_default.cgi",               cgi_gpio_default_handler},  
+    // {"/gpio_default.cgi",               cgi_gpio_default_handler},  
     {"/t_sensors.cgi",                  cgi_temperature_sensors},
-    {"/t_advanced.cgi",                 cgi_advanced_settings},       
+    {"/t_advanced.cgi",                 cgi_advanced_settings},
+    // *** application handlers end ***            
      
 };
 

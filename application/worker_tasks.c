@@ -16,13 +16,14 @@
 
 // include header for each worker task here
 #include "thermostat.h"
+#include "mqtt.h"
 
 // worker tasks to launch and monitor
 WORKER_TASK_T worker_tasks[] =
 {
     //  function        name                    stack   priority        
     {   thermostat_task,"Thermostat Task",      8096,   5},       
-
+    {   mqtt_task,      "MQTT Task",            8096,   10},   
 
     // end of table
     {   NULL,           NULL,               0,      0,         }

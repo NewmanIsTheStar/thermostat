@@ -10,6 +10,7 @@ target_sources(${PROJECT_NAME} PRIVATE
         powerwall.c
         json_parser.c
         tm1637.c
+        mqtt_task.c
         ssi.c
         cgi.c        
 )

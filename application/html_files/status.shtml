@@ -55,13 +55,14 @@ body {
 </head>
 <body>
 
-  <div class="sidenav">
+    <div class="sidenav">
     <a href="/network.shtml">Network</a>   
     <a href="/time.shtml">Time</a>
     <a href="/t_gpio.shtml">GPIO</a>
     <a href="/powerwall.shtml">Powerwall</a>
     <a href="/t_advanced.shtml">Advanced</a>     
     <a href="/syslog.shtml">Syslog</a>    
+    <a href="/mqtt.shtml">MQTT</a>       
     <a href="/units.shtml">Foibles</a>     
     <a href="/status.shtml">Status</a>
     <a href="/t_history.shtml">History</a>     

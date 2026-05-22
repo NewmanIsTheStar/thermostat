@@ -28,6 +28,7 @@
 
 int config_validate(void);
 void config_system_variable_initialize(void);
+void config_system_to_v1(void *previous_config);
 void config_blank_to_v1(void *previous_config);
 void config_v1_to_v2(void *previous_config);
 void config_v2_to_v3(void *previous_config);
@@ -106,7 +107,7 @@ void config_blank_to_v1(void *previous_config)
     STRNCPY(config.syslog_server_ip, "spud.badnet", sizeof(config.syslog_server_ip));         
     STRNCPY(config.govee_light_ip, "govee.badnet", sizeof(config.govee_light_ip));     
 
-    config.syslog_enable = 0;
+    // config.syslog_enable = 0;
     
     config.weather_station_enable = 1;
     config.wind_threshold = 15;
@@ -443,7 +444,7 @@ void config_v10_to_v11(void *previous_config)
  */
 void config_v11_to_v12(void *previous_config)
 {
-    int i;
+    int i, j;
     NON_VOL_VARIABLES_T_VERSION_11 *temp_config = NULL;
     NON_VOL_VARIABLES_T_VERSION_11 *config_v11 = NULL;
 
@@ -451,42 +452,44 @@ void config_v11_to_v12(void *previous_config)
 
     if (previous_config)
     {
-        if (((NON_VOL_VARIABLES_T_VERSION_11 *)previous_config)->version == 12)
+        if (((NON_VOL_VARIABLES_T_VERSION_11 *)previous_config)->version == 11)
         {
-            printf("Previous config version 12 is available in flash\n");
+            printf("Previous config version 11 is available in flash\n");
         }
-        else
-        {
-            printf("Previous config is not available from flash. Allocating temporary RAM buffer.\n");
-            previous_config = NULL;
+        // this does not work because all the legacy conversion functions acutally work on the latest config structure
+        // no conversion is needed if all you have is a RAM copy that was just created
+        // else
+        // {
+        //     printf("Previous config is not available from flash. Allocating temporary RAM buffer.\n");
+        //     previous_config = NULL;
 
-            // allocate temporary buffer
-            temp_config = malloc(sizeof(NON_VOL_VARIABLES_T_VERSION_11));
-            if (temp_config)
-            {
-                previous_config = temp_config;
-            }
-            else
-            {
-                printf("Failed to allocate RAM.  Conversion in RAM not possible.  Buring flash with v12.\n");
-                if (!flash_write_non_volatile_variables())
-                {
-                    previous_config = flash_get_config_location();
+        //     // allocate temporary buffer
+        //     temp_config = malloc(sizeof(NON_VOL_VARIABLES_T_VERSION_11));
+        //     if (temp_config)
+        //     {
+        //         memcpy(temp_config, &config, sizeof(NON_VOL_VARIABLES_T_VERSION_11));
+        //         previous_config = temp_config;
+        //     }
+        //     else
+        //     {
+        //         printf("Failed to allocate RAM for conversion to v12.  Conversion in RAM not possible.  Buring flash with v11.\n");
+        //         if (!flash_write_non_volatile_variables())
+        //         {
+        //             previous_config = flash_get_config_location();
 
-                    if (((NON_VOL_VARIABLES_T_VERSION_11 *)previous_config)->version != 12)
-                    {
-                        printf("Unexpected version found in flash %d\n", ((NON_VOL_VARIABLES_T_VERSION_11 *)previous_config)->version);
-                        previous_config = NULL;
-                    }
-                }
+        //             if (((NON_VOL_VARIABLES_T_VERSION_11 *)previous_config)->version != 11)
+        //             {
+        //                 printf("Unexpected version found in flash %d\n", ((NON_VOL_VARIABLES_T_VERSION_11 *)previous_config)->version);
+        //                 previous_config = NULL;
+        //             }
+        //         }
                 
-                if (previous_config == NULL)
-                {
-                    printf("Unable to perform conversion using either flash or ram\n");
-                }
-            }
-
-        }
+        //         if (previous_config == NULL)
+        //         {
+        //             printf("Unable to perform conversion using either flash or ram\n");
+        //         }
+        //     }
+        // }
     }
 
     if (previous_config)
@@ -722,6 +725,7 @@ int config_validate(void)
     uint16_t calculated_crc = 0;
     int latest_valid_config_version = 0;
     void *previous_config = NULL;
+    bool system_config_valid = false;
 
     // read configuration into RAM
     flash_read_non_volatile_variables(); 
@@ -751,6 +755,9 @@ int config_validate(void)
         if(crc_from_flash == calculated_crc)
         {
             printf("Found valid system configuration variables (e.g. network config).  These will be preserved.\n");
+            previous_config = flash_get_config_location();
+            config_system_to_v1(previous_config);
+            system_config_valid = true;
         }
         else
         {
@@ -773,6 +780,14 @@ int config_validate(void)
         if (latest_valid_config_version < config_info[i].version)
         {
             config_info[i].upgrade_function(previous_config);
+
+            if ((i == (NUM_ROWS(config_info)-1)) && (system_config_valid == true))
+            {
+                printf("Overwrting system config using values from flash.\n");
+                previous_config = flash_get_config_location();
+                config_system_to_v1(previous_config);   
+                printf("after overwrite %d\n", config.powerwall_ip[0]);          
+            }
         }
     }
 #else
@@ -863,4 +878,53 @@ void config_system_variable_initialize(void)
     config.mqtt_user[0] = 0;
     config.mqtt_password[0] = 0;
     config.mqtt_broker_address[0] = 0;
+}
+
+ /*!
+ * \brief Copy system settings from unrecognized configuration version to v1
+ * 
+ * \return 0 on success, -1 on error
+ */
+void config_system_to_v1(void *previous_config)
+{
+    int i;
+    // NON_VOL_VARIABLES_T_VERSION_11 *temp_config = NULL;
+    NON_VOL_VARIABLES_T_VERSION_1 *config_v1 = NULL;
+    NON_VOL_VARIABLES_T *config_unrecognized = NULL;
+
+    printf("Attempting to preserve system settings.\n");
+
+    if (previous_config)
+    {
+        config_unrecognized = (NON_VOL_VARIABLES_T *)previous_config;
+        config_v1 = (NON_VOL_VARIABLES_T_VERSION_1 *)&config;
+
+        // ***system config start ***
+        //int version;
+        config_v1->personality = config_unrecognized->personality;
+        memcpy(config_v1->wifi_ssid, config_unrecognized->wifi_ssid, sizeof(config_v1->wifi_ssid));
+        memcpy(config_v1->wifi_password, config_unrecognized->wifi_password, sizeof(config_v1->wifi_password));
+        memcpy(config_v1->wifi_country, config_unrecognized->wifi_country, sizeof(config_v1->wifi_country));                
+        config_v1->dhcp_enable = config_unrecognized->dhcp_enable;
+        //memcpy(config_v1->host_name, config_unrecognized->host_name, sizeof(config_v1->host_name)); 
+        //STRNCPY(config_v1->host_name, "thermostat", sizeof(config_v1->host_name));          
+        memcpy(config_v1->ip_address, config_unrecognized->ip_address, sizeof(config_v1->ip_address));   
+        memcpy(config_v1->network_mask, config_unrecognized->network_mask, sizeof(config_v1->network_mask));   
+        memcpy(config_v1->gateway, config_unrecognized->gateway, sizeof(config_v1->gateway));   
+        config_v1->timezone_offset = config_unrecognized->timezone_offset;
+        config_v1->daylightsaving_enable = config_unrecognized->daylightsaving_enable;     
+        memcpy(config_v1->daylightsaving_start, config_unrecognized->daylightsaving_start, sizeof(config_v1->daylightsaving_start)); 
+        memcpy(config_v1->daylightsaving_end, config_unrecognized->daylightsaving_end, sizeof(config_v1->daylightsaving_end)); 
+        memcpy(config_v1->time_server, config_unrecognized->time_server, sizeof(config_v1->time_server));                 
+        config_v1->syslog_enable = config_unrecognized->syslog_enable; 
+        memcpy(config_v1->syslog_server_ip, config_unrecognized->syslog_server_ip, sizeof(config_v1->syslog_server_ip)); 
+        config_v1->use_archaic_units = config_unrecognized->use_archaic_units; 
+        config_v1->use_simplified_english = config_unrecognized->use_simplified_english; 
+        config_v1->use_monday_as_week_start = config_unrecognized->use_monday_as_week_start; 
+        //memcpy(config_v1->gpio_default, config_unrecognized->gpio_default, sizeof(config_v1->gpio_default));   
+        // config_v1->mqtt_user[0] = 0;
+        // config_v1->mqtt_password[0] = 0;        
+        // config_v1->mqtt_broker_address[0] = 0;
+
+    }
 }

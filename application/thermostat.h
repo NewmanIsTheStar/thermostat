@@ -100,6 +100,7 @@ int display_initialize(void);
 int display_gpio_enable(bool enable);
 int button_gpio_enable(bool enable);
 int display_brightness(int brightness);
+int display_get_base_temperature(void);
 int display_set_base_temperature(int base_temperature);
 int display_get_setpoint_offset(void);
 int display_set_setpoint_offset(int new_offset);

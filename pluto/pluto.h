@@ -27,6 +27,11 @@ typedef enum
     REBOOT_SNTP_FAILURE     = 1,
     REBOOT_WEATHER_FAILURE  = 2,
     REBOOT_WATCHDOG         = 3,
+    REBOOT_MQTT_F1          = 4,
+    REBOOT_MQTT_F2          = 5,
+    REBOOT_MQTT_F3          = 6,
+    REBOOT_MQTT_F4          = 7,
+    REBOOT_MQTT_F5          = 8,
     REBOOT_UNKNOWN          = 4294967295,   //INT_MAX inadequate 
 } REBOOT_REASON_T;
 
