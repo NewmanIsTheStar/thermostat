@@ -69,8 +69,9 @@ typedef enum
     TOPIC_MODE_SET              = 1,
     TOPIC_TEMPERATURE_CURRENT   = 2,
     TOPIC_TEMPERATURE_SETPOINT  = 3,
+    TOPIC_TEMPERATURE_SET       = 4,
 
-    NUM_TOPICS                  = 4
+    NUM_TOPICS                  = 5
 } MQTT_TOPIC_ID_T;
 
 
@@ -124,7 +125,7 @@ bool discovery_completed = false;
 bool states_completed = false;
 int states_outstanding = 0;
 ip_addr_t broker_ip;
-int relay_to_switch = -1;
+MQTT_TOPIC_ID_T mqtt_rx_payload_type = NUM_TOPICS;
 int relay_desired_state = -1;
 static QueueHandle_t mqtt_queue = NULL;                     // indicates user has change relay state
 static uint8_t mqtt_message = 0;                            // relay that has changed state
@@ -132,7 +133,8 @@ static bool mqtt_queue_initialized = false;                 // queue initializat
 static mqtt_client_t *mqtt_client;
 static char *homeassistant_discovery_payload = NULL;
 static int connection_backoff_ms = CONNECTION_BACKOFF_MS_DEFAULT;
-
+char mqtt_requested_mode[16];
+char mqtt_requested_temperature[16];
 /*!
  * \brief Support relay control and monitoring via MQTT
  *
@@ -142,7 +144,8 @@ static int connection_backoff_ms = CONNECTION_BACKOFF_MS_DEFAULT;
  */
 void mqtt_task(void *params)
 {
-    int relay_changed = 0;
+    int mqtt_request = 0;
+    int desired_temperature = 0;
 
     printf("MQTT task started!\n");
 
@@ -155,17 +158,42 @@ void mqtt_task(void *params)
         mqttst_initialize();
 
         // wait for timeout period but abort immediately if a relay changes state
-        relay_changed = mqttst_wait(MQTT_TASK_LOOP_DELAY);
+        mqtt_request = mqttst_wait(MQTT_TASK_LOOP_DELAY);
 
-        if (relay_changed) 
+        if (mqtt_request) 
         {
             if (connection_completed)
             {
-                // if a specific relay has changed then publish it first
-                // if ((mqtt_message >=0) && (mqtt_message < config.rmtsw_relay_max))
-                // {
-                //     mqttst_publish_relay_state(mqtt_message, mqtt_client, NULL);
-                // }
+                switch(mqtt_message)
+                {
+                case TOPIC_MODE_SET:
+                    if (strcasecmp(mqtt_requested_mode, "off") == 0)
+                    {
+                        display_set_mode(HVAC_OFF);
+                    } 
+                    else if (strcasecmp(mqtt_requested_mode, "heat") == 0)
+                    {
+                        display_set_mode(HVAC_HEATING_ONLY);
+                    }
+                    else if (strcasecmp(mqtt_requested_mode, "cool") == 0)
+                    {
+                        display_set_mode(HVAC_COOLING_ONLY);
+                    }
+                    else if (strcasecmp(mqtt_requested_mode, "auto") == 0)
+                    {
+                        display_set_mode(HVAC_AUTO);
+                    }                    
+                    break;
+                case TOPIC_TEMPERATURE_SET:
+                    desired_temperature = get_int_with_tenths_from_string(mqtt_requested_temperature);
+                    if ((desired_temperature > 10) && (desired_temperature < 90))  // TODO: sane limits for Celcius and Archaic units
+                    {
+                        display_set_setpoint_offset(desired_temperature - display_get_base_temperature());
+                    }
+                    break;
+                default:
+                    break;
+                }
 
                 // publish all relay states
                 mqttst_publish_all_thermostat_states(mqtt_client, NULL);
@@ -430,26 +458,14 @@ void mqttst_connection_cb(mqtt_client_t *client, void *arg, mqtt_connection_stat
  */
 void mqttst_incoming_publish_cb(void *arg, const char *topic, u32_t tot_len) 
 {
-    char expected_domain[32];
-    
-    sprintf(expected_domain, "relay-c-%02x-%02x-%02x-%02x-%02x-%02x", web.mac[0], web.mac[1], web.mac[2], web.mac[3], web.mac[4], web.mac[5]); 
-    
-    //printf("Topic: %s, Total Length: %u\n", topic, (unsigned int)tot_len);
-
-    if (strlen(topic) == strlen("relay-c-00-11-22-33-44-55/X/command"))
+    if (strcasecmp(topic, mqtt_status_table[TOPIC_MODE_SET].topic_name) == 0)
     {
-        if ((strncasecmp(topic, expected_domain, strlen(expected_domain)) == 0) &&
-            (strncasecmp(topic + strlen(expected_domain) + strlen("/X/"), "command", strlen("command")) == 0) &&
-            isdigit(topic[strlen(expected_domain) + strlen("/")]))
-        {
-            relay_to_switch = topic[strlen(expected_domain) + strlen("/")] - '0' - 1;  // switch to zero base
-            //printf("got relay to switch = %d\n", relay_to_switch);
-        }
-        else
-        {
-            //send_syslog_message("mqtt", "unexpected command rejected");
-        }
-    }
+        mqtt_rx_payload_type = TOPIC_MODE_SET;
+    }    
+    else if (strcasecmp(topic, mqtt_status_table[TOPIC_TEMPERATURE_SET].topic_name) == 0)
+    {
+        mqtt_rx_payload_type = TOPIC_TEMPERATURE_SET;
+    }      
 }
 
 // 2. Data Callback: Receives payload chunks
@@ -483,10 +499,32 @@ void mqttst_incoming_data_cb(void *arg, const u8_t *data, u16_t len, u8_t flags)
             
         //     relay_to_switch = -1;
         // }
+        switch(mqtt_rx_payload_type)
+        {
+        case TOPIC_MODE_SET:
+            CLIP(len, 0, sizeof(mqtt_requested_mode));
+            memcpy(mqtt_requested_mode, data, len);
+            mqtt_requested_mode[len] = 0;
+            printf("RX requested mod: %s\n", mqtt_requested_mode);
+            mqttst_queue_send((uint8_t)TOPIC_MODE_SET);
+            break;
+        case TOPIC_TEMPERATURE_SET:
+            CLIP(len, 0, sizeof(mqtt_requested_temperature));
+            memcpy(mqtt_requested_temperature, data, len);
+            mqtt_requested_temperature[len] = 0;
+            printf("RX requested temperature: %s\n", mqtt_requested_temperature);
+            mqttst_queue_send((uint8_t)TOPIC_TEMPERATURE_SET);        
+            break;
+        default:
+            break;
+        }
        
+        mqtt_rx_payload_type = NUM_TOPICS;
+
     }
     else if (flags)
     {
+        printf("unhandled partial publication payload packet \n");
         //send_syslog_message("mqtt", "unhandled partial packet");
     }
 }
@@ -738,11 +776,11 @@ int mqttst_construct_discovery_payload(char *buffer, size_t len)
     STRNCAT(buffer, temp_string, len);
     STRNCAT(buffer, "\",", len);
     STRNCAT(buffer, "\"temperature_state_topic\":\"", len);
-    sprintf(temp_string, "st-%02x-%02x-%02x-%02x-%02x-%02x/hvac/temperature/setpoint", web.mac[0], web.mac[1], web.mac[2], web.mac[3], web.mac[4], web.mac[5]);
+    sprintf(temp_string, "st-%02x-%02x-%02x-%02x-%02x-%02x/hvac/temperature/setpoint/state", web.mac[0], web.mac[1], web.mac[2], web.mac[3], web.mac[4], web.mac[5]);
     STRNCAT(buffer, temp_string, len);
     STRNCAT(buffer, "\",", len);
     STRNCAT(buffer, "\"temperature_command_topic\":\"", len);
-    sprintf(temp_string, "st-%02x-%02x-%02x-%02x-%02x-%02x/hvac/temperature/setpoint", web.mac[0], web.mac[1], web.mac[2], web.mac[3], web.mac[4], web.mac[5]);
+    sprintf(temp_string, "st-%02x-%02x-%02x-%02x-%02x-%02x/hvac/temperature/setpoint/command", web.mac[0], web.mac[1], web.mac[2], web.mac[3], web.mac[4], web.mac[5]);
     STRNCAT(buffer, temp_string, len);
     STRNCAT(buffer, "\"}", len);
 
@@ -930,10 +968,11 @@ int mqttst_initialize_topic_staus(void)
 
     now = unix_time;
 
-    sprintf(mqtt_status_table[TOPIC_MODE_STATE].topic_name,             "st-%02x-%02x-%02x-%02x-%02x-%02x/hvac/mode/state",             web.mac[0], web.mac[1], web.mac[2], web.mac[3], web.mac[4], web.mac[5]);
-    sprintf(mqtt_status_table[TOPIC_MODE_SET].topic_name,               "st-%02x-%02x-%02x-%02x-%02x-%02x/hvac/mode/set",               web.mac[0], web.mac[1], web.mac[2], web.mac[3], web.mac[4], web.mac[5]);    
-    sprintf(mqtt_status_table[TOPIC_TEMPERATURE_CURRENT].topic_name,    "st-%02x-%02x-%02x-%02x-%02x-%02x/hvac/temperature/current",    web.mac[0], web.mac[1], web.mac[2], web.mac[3], web.mac[4], web.mac[5]);    
-    sprintf(mqtt_status_table[TOPIC_TEMPERATURE_SETPOINT].topic_name,   "st-%02x-%02x-%02x-%02x-%02x-%02x/hvac/temperature/setpoint",   web.mac[0], web.mac[1], web.mac[2], web.mac[3], web.mac[4], web.mac[5]);
+    sprintf(mqtt_status_table[TOPIC_MODE_STATE].topic_name,             "st-%02x-%02x-%02x-%02x-%02x-%02x/hvac/mode/state",                   web.mac[0], web.mac[1], web.mac[2], web.mac[3], web.mac[4], web.mac[5]);
+    sprintf(mqtt_status_table[TOPIC_MODE_SET].topic_name,               "st-%02x-%02x-%02x-%02x-%02x-%02x/hvac/mode/set",                     web.mac[0], web.mac[1], web.mac[2], web.mac[3], web.mac[4], web.mac[5]);    
+    sprintf(mqtt_status_table[TOPIC_TEMPERATURE_CURRENT].topic_name,    "st-%02x-%02x-%02x-%02x-%02x-%02x/hvac/temperature/current",          web.mac[0], web.mac[1], web.mac[2], web.mac[3], web.mac[4], web.mac[5]);    
+    sprintf(mqtt_status_table[TOPIC_TEMPERATURE_SETPOINT].topic_name,   "st-%02x-%02x-%02x-%02x-%02x-%02x/hvac/temperature/setpoint/state",   web.mac[0], web.mac[1], web.mac[2], web.mac[3], web.mac[4], web.mac[5]);
+    sprintf(mqtt_status_table[TOPIC_TEMPERATURE_SET].topic_name,        "st-%02x-%02x-%02x-%02x-%02x-%02x/hvac/temperature/setpoint/command", web.mac[0], web.mac[1], web.mac[2], web.mac[3], web.mac[4], web.mac[5]);    
 
     for(i=0; i < NUM_TOPICS; i++)
     {
@@ -974,11 +1013,15 @@ void mqttst_publish_state(MQTT_TOPIC_ID_T topic_id, mqtt_client_t *client)
         err = 1;
         break; 
     case TOPIC_TEMPERATURE_CURRENT:
-        snprintf(state_payload, sizeof(state_payload), "%d", web.thermostat_temperature);
+        snprintf(state_payload, sizeof(state_payload), "%c%d.%d", web.thermostat_temperature<0?'-':' ', abs(web.thermostat_temperature/10), abs(web.thermostat_temperature%10));
+        
         break;
     case TOPIC_TEMPERATURE_SETPOINT:
-        snprintf(state_payload, sizeof(state_payload), "%d", web.thermostat_set_point);
+        snprintf(state_payload, sizeof(state_payload), "%c%d.%d", web.thermostat_set_point<0?'-':' ', abs(web.thermostat_set_point/10), abs(web.thermostat_set_point%10));
         break;
+    case TOPIC_TEMPERATURE_SET:
+        err = 1;
+        break;         
     default:
         err = 2;
         break;

@@ -151,7 +151,11 @@ void thermostat_task(void *params)
                 // update mqtt
                 mqttst_thermostat_refresh();
             }
-            
+            // TEST TEST TEST
+            web.thermostat_temperature++;
+            mqttst_thermostat_refresh();
+            SLEEP_MS(10000);
+
             // check powerwall status
             powerwall_check();
 
