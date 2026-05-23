@@ -43,6 +43,8 @@
 #include "pluto.h"
 #include "tm1637.h"
 
+#define MQTT_FAKE_BUTTON_IRQ (69)
+
 typedef enum
 {
     DISPLAY_TEMPERATURE = 0,
@@ -69,6 +71,7 @@ static QueueHandle_t irq_queue = NULL;
 static uint8_t passed_value = 0;
 static bool display_gpio_ok = false;
 static bool button_gpio_ok = false;
+static bool mqtt_active = false;
 
 /*!
  * \brief process button presses until inactivity timeout occurs
@@ -92,7 +95,13 @@ bool handle_button_press_with_timeout(TickType_t timeout)
                 {
                     printf("IRQ detected from GPIO%d\n", passed_value);
                     enable_irq(true);
-                    button_pressed = true;                
+                    button_pressed = true;  
+                    mqtt_active = false;              
+                }
+                else if (passed_value == MQTT_FAKE_BUTTON_IRQ)
+                {
+                    printf("mqtt fake button press detected\n");
+                    mqtt_active = true;
                 }
                 else
                 {
@@ -315,10 +324,17 @@ THERMOSTAT_MODE_T get_front_panel_mode(void)
 
     now_tick = xTaskGetTickCount();
 
+    // user has to stop pressing buttons for 5 seconds before we process the mode
     if ((stable_mode != front_panel_mode) && ((now_tick - front_panel_mode_change_tick) > 5000))
     {
         stable_mode = front_panel_mode;
-    } 
+    }
+    
+    // if the mode is changed by mqtt then process it immediately
+    if  (mqtt_active)
+    {
+        stable_mode = front_panel_mode;
+    }
    
     return (stable_mode);
 }
@@ -404,4 +420,17 @@ int display_set_mode(THERMOSTAT_MODE_T new_mode)
      front_panel_mode = new_mode;
 
     return(0);
+}
+
+void display_fake_button_press(void)   
+{
+  // MQTT commands are treated like front panel button inputs
+  // a fake button interrupt causes the thermostat task to react immediately to MQTT commands    
+  static uint8_t fake_button_irq_number = MQTT_FAKE_BUTTON_IRQ;
+
+  if (irq_queue)
+  {
+    // Signal the alert clearance task
+    xQueueSend(irq_queue, &fake_button_irq_number, 0);
+  }
 }

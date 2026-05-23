@@ -108,6 +108,7 @@ THERMOSTAT_STATE_T control_thermostat_relays(long int temperaturex10)
     {
         // check for temperature offset entered on front panel display
         temporary_set_point_offsetx10 = display_get_setpoint_offset();
+        printf("setpoint offset is %d base is %d sum = %d\n", temporary_set_point_offsetx10, display_get_base_temperature(), display_get_base_temperature() + temporary_set_point_offsetx10);
 
         // determine current setpoints based on schedule, powerwall status and last cycle
         update_current_setpoints(last_active, temperaturex10, temporary_set_point_offsetx10);
@@ -892,38 +893,37 @@ int thermostat_relay_lockout_stop(void)
 
 
 /*!
- * \brief thermostat_get_mode_string
+ * \brief thermostat mode names understood by home assistant [compulsory -- cannot be changed!]
  * 
  * \return number of characters output
  */
-int thermostat_get_mode_string(THERMOSTAT_MODE_T mode, char *string, int len)
+int thermostat_get_home_assistant_mode_string(THERMOSTAT_MODE_T mode, char *string, int len)
 {
     int printed = 0;
 
     switch(mode)
     {
     case HVAC_AUTO:
-        printed = snprintf(string, len, "Auto");
+        printed = snprintf(string, len, "auto");
         break;
     case HVAC_HEATING_ONLY:
-        printed = snprintf(string, len, "Heat Only");
+        printed = snprintf(string, len, "heat");
         break;
     case HVAC_COOLING_ONLY:
-        printed = snprintf(string, len, "Cool Only");
+        printed = snprintf(string, len, "cool");
         break;                                            
     case HVAC_FAN_ONLY:
-        printed = snprintf(string, len, "Fan Only");
+        printed = snprintf(string, len, "fan_only");
         break;
     case HVAC_HEAT_AND_COOL:
-        printed = snprintf(string, len, "Heat & Cool");
-        break;                          
-        break;              
+        printed = snprintf(string, len, "auto");   // home assistant knows heat_cool but the default widget does not seem to support it
+        break;                                      
     case HVAC_OFF:
-        printed = snprintf(string, len, "Off");            
+        printed = snprintf(string, len, "off");            
         break;
     default:
         printed = snprintf(string, len, "mystery mode (%d)", mode);
-        printf("unrecognized mode passed to thermostat_get_mode_string()\n");
+        printf("unrecognized mode passed to thermostat_get_home_assistant_mode_string()\n");
         break;
     }
 

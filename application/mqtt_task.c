@@ -46,7 +46,7 @@
 #include "thermostat.h"
 
 #define DISCOVERY_PAYLOAD_BUFFER_SIZE (2400)   // large payload sent to home assistant for automatic device discovery
-#define ALL_RELAYS (8)                         // message indicating all relay states need to be published
+#define PUBLISH_ALL_DATA (67)                  // message indicating all thermostat states need to be published
 #define CONNECTION_BACKOFF_MS_DEFAULT (500)    // minimum number of milliseconds to wait between attempt to connect to the broker
 
 // typdedefs
@@ -157,7 +157,7 @@ void mqtt_task(void *params)
         // initialize all subsystems that are not already up
         mqttst_initialize();
 
-        // wait for timeout period but abort immediately if a relay changes state
+        // wait for timeout period but abort immediately if a command is received
         mqtt_request = mqttst_wait(MQTT_TASK_LOOP_DELAY);
 
         if (mqtt_request) 
@@ -182,21 +182,27 @@ void mqtt_task(void *params)
                     else if (strcasecmp(mqtt_requested_mode, "auto") == 0)
                     {
                         display_set_mode(HVAC_AUTO);
-                    }                    
+                    } 
+                    else if (strcasecmp(mqtt_requested_mode, "fan_only") == 0)
+                    {
+                        display_set_mode(HVAC_FAN_ONLY);
+                    }                     
+                    display_fake_button_press();                    
                     break;
                 case TOPIC_TEMPERATURE_SET:
                     desired_temperature = get_int_with_tenths_from_string(mqtt_requested_temperature);
-                    if ((desired_temperature > 10) && (desired_temperature < 90))  // TODO: sane limits for Celcius and Archaic units
+                    if ((desired_temperature > 100) && (desired_temperature < 900))  // TODO: sane limits for Celcius and Archaic units
                     {
                         display_set_setpoint_offset(desired_temperature - display_get_base_temperature());
                     }
+                    display_fake_button_press();
+                    break;
+                case PUBLISH_ALL_DATA:
+                    mqttst_publish_all_thermostat_states(mqtt_client, NULL);
                     break;
                 default:
                     break;
-                }
-
-                // publish all relay states
-                mqttst_publish_all_thermostat_states(mqtt_client, NULL);
+                }                
             }
         }
 
@@ -505,7 +511,7 @@ void mqttst_incoming_data_cb(void *arg, const u8_t *data, u16_t len, u8_t flags)
             CLIP(len, 0, sizeof(mqtt_requested_mode));
             memcpy(mqtt_requested_mode, data, len);
             mqtt_requested_mode[len] = 0;
-            printf("RX requested mod: %s\n", mqtt_requested_mode);
+            printf("RX requested mod: %s\n", mqtt_requested_mode);            
             mqttst_queue_send((uint8_t)TOPIC_MODE_SET);
             break;
         case TOPIC_TEMPERATURE_SET:
@@ -763,7 +769,7 @@ int mqttst_construct_discovery_payload(char *buffer, size_t len)
     STRNCAT(buffer, "{\"name\": \"Thermostat\",\"unique_id\":\"", len);
     sprintf(temp_string, "st-%02x-%02x-%02x-%02x-%02x-%02x", web.mac[0], web.mac[1], web.mac[2], web.mac[3], web.mac[4], web.mac[5]);
     STRNCAT(buffer, temp_string, len);
-    STRNCAT(buffer, "\",\"device_class\":\"climate\",\"modes\":[\"off\",\"heat\",\"cool\",\"auto\"],\"mode_state_topic\":\"", len);
+    STRNCAT(buffer, "\",\"device_class\":\"climate\",\"modes\":[\"off\",\"heat\",\"cool\",\"auto\",\"fan_only\"],\"mode_state_topic\":\"", len);
     sprintf(temp_string, "st-%02x-%02x-%02x-%02x-%02x-%02x/hvac/mode/state", web.mac[0], web.mac[1], web.mac[2], web.mac[3], web.mac[4], web.mac[5]);
     STRNCAT(buffer, temp_string, len);
     STRNCAT(buffer, "\",", len);
@@ -890,14 +896,14 @@ void mqttst_publish_relay_state(int relay, mqtt_client_t *client, void *arg)
 }
 
 /*!
- * \brief trigger publication of relay states by mqtt task
+ * \brief trigger publication of thermostat states by mqtt task
  * 
  * \return nothing
  */
 void mqttst_thermostat_refresh(void)
 {
-    // relay states have changed
-    mqttst_queue_send(ALL_RELAYS);
+    // thermostat states have changed
+    mqttst_queue_send(PUBLISH_ALL_DATA);
 }
 
 /*!
@@ -1006,8 +1012,10 @@ void mqttst_publish_state(MQTT_TOPIC_ID_T topic_id, mqtt_client_t *client)
 
     switch(topic_id)
     {
-    case TOPIC_MODE_STATE:        
-        thermostat_get_mode_string(web.thermostat_effective_mode, state_payload, sizeof(state_payload));
+    case TOPIC_MODE_STATE:
+        printf("effective mode = %d\n", web.thermostat_effective_mode);        
+        thermostat_get_home_assistant_mode_string(web.thermostat_effective_mode, state_payload, sizeof(state_payload));
+        printf("effective mode payload = %s\n", state_payload); 
         break;
     case TOPIC_MODE_SET:
         err = 1;
@@ -1031,6 +1039,7 @@ void mqttst_publish_state(MQTT_TOPIC_ID_T topic_id, mqtt_client_t *client)
     {
         STRNCPY(state, mqtt_status_table[topic_id].topic_name, sizeof(state));
 
+        printf("PUBLISHING: topic = %s payload = %s\n", state, state_payload);
         // send state
         retain = 0;
         cyw43_arch_lwip_begin();

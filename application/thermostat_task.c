@@ -148,19 +148,18 @@ void thermostat_task(void *params)
                 //web.thermostat_temperature = filter_temperature_noise(temperaturex10);
                 web.thermostat_temperature = temperaturex10;
 
-                // update mqtt
-                mqttst_thermostat_refresh();
+                // // update mqtt
+                // mqttst_thermostat_refresh();
             }
-            // TEST TEST TEST
-            web.thermostat_temperature++;
-            mqttst_thermostat_refresh();
-            SLEEP_MS(10000);
 
             // check powerwall status
             powerwall_check();
 
             // set hvac relays
             control_thermostat_relays(temperaturex10);
+
+            // update mqtt
+            mqttst_thermostat_refresh();            
 
             if (buttons_initialized)
             {

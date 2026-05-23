@@ -24,6 +24,4 @@ typedef enum
 void mqtt_task(__unused void *params);
 void mqttst_thermostat_refresh(void);
 
-
-
 #endif

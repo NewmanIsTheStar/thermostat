@@ -106,6 +106,7 @@ int display_get_setpoint_offset(void);
 int display_set_setpoint_offset(int new_offset);
 THERMOSTAT_MODE_T get_front_panel_mode(void);
 int display_set_mode(THERMOSTAT_MODE_T new_mode);
+void display_fake_button_press(void);
 
 // thermostat_web_ui.c
 int get_free_schedule_row(void);
@@ -120,7 +121,7 @@ bool schedule_mode_valid(int mode);
 int initialize_hvac_control(void);
 THERMOSTAT_STATE_T control_thermostat_relays(long int temperaturex10);
 int relay_gpio_enable(bool enable);
-int thermostat_get_mode_string(THERMOSTAT_MODE_T mode, char *string, int len);
+int thermostat_get_home_assistant_mode_string(THERMOSTAT_MODE_T mode, char *string, int len);
 
 
 #endif
