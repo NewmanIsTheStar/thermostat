@@ -31,18 +31,12 @@
 #include "stdarg.h"
 
 #include "watchdog.h"
-//#include "weather.h"
 #include "mqtt.h"
 #include "flash.h"
 #include "calendar.h"
 #include "utility.h"
 #include "config.h"
-//#include "led_strip.h"
-//#include "message.h"
-//#include "altcp_tls_mbedtls_structs.h"
-//#include "powerwall.h"
 #include "pluto.h"
-//#include "tm1637.h"
 #include "thermostat.h"
 
 #define DISCOVERY_PAYLOAD_BUFFER_SIZE (2400)   // large payload sent to home assistant for automatic device discovery
@@ -98,7 +92,8 @@ void mqttst_publish_all_thermostat_states(mqtt_client_t *client, void *arg);
 int mqttst_wait(TickType_t timeout);
 void mqttst_queue_send(uint8_t message);
 int mqttst_initialize_queue(void);
-void mqttst_publish_relay_state(int relay, mqtt_client_t *client, void *arg);
+void mqttst_tear_down(void);
+void mqttst_request_connection_restart(void);
 
 // external variables
 extern uint32_t unix_time;
@@ -106,7 +101,7 @@ extern NON_VOL_VARIABLES_T config;
 extern WEB_VARIABLES_T web;
 
 // global variables
-MQTT_INITIALIZATION_T mqtt_initialization_table[] =
+static MQTT_INITIALIZATION_T mqtt_initialization_table[] =
 {
     {mqttst_initialize_topic_staus,               false},
     {mqttst_initialize_queue,                     false},     
@@ -115,28 +110,28 @@ MQTT_INITIALIZATION_T mqtt_initialization_table[] =
     {mqttst_initialize_ha_discovery,              false}, 
     {mqttst_initialize_ha_states,                 false},                 
 };
-MQTT_TOPIC_STATUS_T mqtt_status_table[NUM_TOPICS];
-bool connection_initialized = false;
-bool discovery_initialized = false;
-bool states_initialized = false;
-bool connection_completed = false;
-bool subscription_complete = false;
-bool discovery_completed = false;
-bool states_completed = false;
-int states_outstanding = 0;
-ip_addr_t broker_ip;
-MQTT_TOPIC_ID_T mqtt_rx_payload_type = NUM_TOPICS;
-int relay_desired_state = -1;
-static QueueHandle_t mqtt_queue = NULL;                     // indicates user has change relay state
-static uint8_t mqtt_message = 0;                            // relay that has changed state
-static bool mqtt_queue_initialized = false;                 // queue initialization status
+static MQTT_TOPIC_STATUS_T mqtt_status_table[NUM_TOPICS];
+static bool connection_process_started = false;
+static bool discovery_initialized = false;
+static bool states_initialized = false;
+static bool connection_completed = false;
+static bool subscription_complete = false;
+static bool discovery_completed = false;
+static bool states_completed = false;
+static int states_outstanding = 0;
+static bool connection_restart_request = false;
+static ip_addr_t broker_ip;
+static MQTT_TOPIC_ID_T mqtt_rx_payload_type = NUM_TOPICS;
+static QueueHandle_t mqtt_queue = NULL;                     
+static uint8_t mqtt_message = 0;                            
+static bool mqtt_queue_initialized = false;             
 static mqtt_client_t *mqtt_client;
 static char *homeassistant_discovery_payload = NULL;
 static int connection_backoff_ms = CONNECTION_BACKOFF_MS_DEFAULT;
-char mqtt_requested_mode[16];
-char mqtt_requested_temperature[16];
+static char mqtt_requested_mode[16];
+static char mqtt_requested_temperature[16];
 /*!
- * \brief Support relay control and monitoring via MQTT
+ * \brief Support thermostat control and monitoring via MQTT
  *
  * \param params unused garbage
  * 
@@ -204,6 +199,12 @@ void mqtt_task(void *params)
                     break;
                 }                
             }
+        }
+
+        if (connection_restart_request)
+        {
+            mqttst_tear_down();
+            connection_restart_request = false;
         }
 
         // tell watchdog task that we are still alive
@@ -302,7 +303,7 @@ int mqttst_sanitize_user_config(void)
 int mqttst_initialize_connection(void)
 {
     int err = -1;
-    struct mqtt_connect_client_info_t ci;
+    static struct mqtt_connect_client_info_t ci;
 
     if (config.mqtt_broker_address[0] != 0)
     {
@@ -330,7 +331,7 @@ int mqttst_initialize_connection(void)
 
                 if (err == ERR_OK)
                 {
-                    connection_initialized = true;
+                    connection_process_started = true;
                 }
             }
         }
@@ -392,7 +393,7 @@ int mqttst_initialize_ha_discovery(void)
 }
 
  /*!
- * \brief Initial publication of relay states
+ * \brief Initial publication of thermostat states
  *
  * \param params none
  * 
@@ -448,15 +449,13 @@ void mqttst_connection_cb(mqtt_client_t *client, void *arg, mqtt_connection_stat
         }
         else
         {
-            application_restart(REBOOT_MQTT_F1);
+            mqttst_request_connection_restart();
         } 
     }
 }
 
-/*SUBSCRIBE************************************************************************************/
-// 1. Publish Callback: Receives the topic
 /*!
- * \brief Receive MQTT command topic that identifies the relay
+ * \brief Receive MQTT command topic that identifies the incomming command
  *
  * \param params unused garbage
  * 
@@ -474,9 +473,8 @@ void mqttst_incoming_publish_cb(void *arg, const char *topic, u32_t tot_len)
     }      
 }
 
-// 2. Data Callback: Receives payload chunks
 /*!
- * \brief Receive MQTT command data that specifies the relay state (ON or OFF)
+ * \brief Receive MQTT command data that specifies either a mode or setpoint
  *
  * \param params unused garbage
  * 
@@ -486,39 +484,20 @@ void mqttst_incoming_data_cb(void *arg, const u8_t *data, u16_t len, u8_t flags)
 {
     if (flags & MQTT_DATA_FLAG_LAST)  // TODO: make this accept and aggregate data received in multiple chunks
     {
-        //printf("Final message received: %.*s AND relay to switch = %d\n", len, (const char*)data, relay_to_switch);
-
-        // if ((relay_to_switch >=0) && (relay_to_switch < config.rmtsw_relay_max))
-        // {
-        //     if (strncasecmp(data, "ON", 2) == 0)
-        //     {
-        //         web.rmtsw_relay_desired_state[relay_to_switch] = true;
-        //         rmtsw_queue_send((uint8_t)relay_to_switch);
-        //         mqttst_queue_send((uint8_t)relay_to_switch);                    
-        //     }
-        //     else if (strncasecmp(data, "OFF", 3) == 0)
-        //     {
-        //         web.rmtsw_relay_desired_state[relay_to_switch] = false;
-        //         rmtsw_queue_send((uint8_t)relay_to_switch);
-        //         mqttst_queue_send((uint8_t)relay_to_switch);  
-        //     }
-            
-        //     relay_to_switch = -1;
-        // }
         switch(mqtt_rx_payload_type)
         {
         case TOPIC_MODE_SET:
             CLIP(len, 0, sizeof(mqtt_requested_mode));
             memcpy(mqtt_requested_mode, data, len);
             mqtt_requested_mode[len] = 0;
-            printf("RX requested mod: %s\n", mqtt_requested_mode);            
+            //printf("RX requested mod: %s\n", mqtt_requested_mode);            
             mqttst_queue_send((uint8_t)TOPIC_MODE_SET);
             break;
         case TOPIC_TEMPERATURE_SET:
             CLIP(len, 0, sizeof(mqtt_requested_temperature));
             memcpy(mqtt_requested_temperature, data, len);
             mqtt_requested_temperature[len] = 0;
-            printf("RX requested temperature: %s\n", mqtt_requested_temperature);
+            //printf("RX requested temperature: %s\n", mqtt_requested_temperature);
             mqttst_queue_send((uint8_t)TOPIC_TEMPERATURE_SET);        
             break;
         default:
@@ -597,8 +576,7 @@ void mqttst_pub_request_cb(void *arg, err_t result)
     if(result != ERR_OK) 
     {
         printf("Publish failed: %d\n", result);
-        //send_syslog_message("mqtt", "publish failed");
-        application_restart(REBOOT_MQTT_F2);
+        mqttst_request_connection_restart();
     } else 
     {
         //printf("Publish success\n");
@@ -691,51 +669,64 @@ void mqttst_publish_discovery(mqtt_client_t *client, void *arg)
     }
 }
 
-// /*!
-//  * \brief Send relay state publication
-//  *
-//  * \param relay 0 - 7
-//  * 
-//  * \return nothing
-//  */
-// void mqttst_publish_state(int relay, mqtt_client_t *client, void *arg)
-// {
-//     const char *pub_payload = "Pico2W Hello!";
-//     err_t err;
-//     u8_t qos = 2; // 0, 1, or 2
-//     u8_t retain = 0;
-//     char state[64];
-//     char state_payload[8];
-//     static MQTT_CALLBACK_ID_T state_arg = MQTT_CALLBACK_STATE_ID;
+/*!
+ * \brief Send thermostat state publication
+ *
+ * \param topic  topic to publish
+ * 
+ * \return nothing
+ */
+void mqttst_publish_state(MQTT_TOPIC_ID_T topic_id, mqtt_client_t *client)
+{
+    const char *pub_payload = "Pico2W Hello!";
+    err_t err = 0;
+    u8_t qos = 2; // 0, 1, or 2
+    u8_t retain = 0;
+    char state[64];
+    char state_payload[64];
+    static MQTT_CALLBACK_ID_T state_arg = MQTT_CALLBACK_STATE_ID;
 
-//     CLIP(relay, 0, 7);
+    switch(topic_id)
+    {
+    case TOPIC_MODE_STATE:        
+        thermostat_get_home_assistant_mode_string(web.thermostat_effective_mode, state_payload, sizeof(state_payload));
+        break;
+    case TOPIC_MODE_SET:
+        err = 1;
+        break; 
+    case TOPIC_TEMPERATURE_CURRENT:
+        snprintf(state_payload, sizeof(state_payload), "%c%d.%d", web.thermostat_temperature<0?'-':' ', abs(web.thermostat_temperature/10), abs(web.thermostat_temperature%10));        
+        break;
+    case TOPIC_TEMPERATURE_SETPOINT:
+        snprintf(state_payload, sizeof(state_payload), "%c%d.%d", web.thermostat_set_point<0?'-':' ', abs(web.thermostat_set_point/10), abs(web.thermostat_set_point%10));
+        break;
+    case TOPIC_TEMPERATURE_SET:
+        err = 2;
+        break;         
+    default:
+        err = 3;
+        break;
+    }
 
-//     sprintf(state, "relay-s-%02x-%02x-%02x-%02x-%02x-%02x/%d/state", web.mac[0], web.mac[1], web.mac[2], web.mac[3], web.mac[4], web.mac[5], relay+1);
+    if (!err)
+    {
+        STRNCPY(state, mqtt_status_table[topic_id].topic_name, sizeof(state));
 
-//     if (web.rmtsw_relay_desired_state[relay])
-//     {
-//         sprintf(state_payload, "ON");
-//     }
-//     else
-//     {
-//         sprintf(state_payload, "OFF");
-//     }
+        //printf("PUBLISHING: topic = %s payload = %s\n", state, state_payload);
+        // send state
+        retain = 0;
+        cyw43_arch_lwip_begin();
+        err = mqtt_publish(client, state, state_payload, strlen(state_payload), qos, retain, mqttst_pub_request_cb, &state_arg);
+        cyw43_arch_lwip_end();
 
-//     // send state
-//     retain = 0;
-//     cyw43_arch_lwip_begin();
-//     err = mqtt_publish(client, state, state_payload, strlen(state_payload), qos, retain, mqttst_pub_request_cb, &state_arg);
-//     cyw43_arch_lwip_end();
+        if(err != ERR_OK) 
+        {
+            printf("Publish state error: %d\n", err);
+            mqttst_request_connection_restart();
+        }
 
-//     if(err != ERR_OK) 
-//     {
-//         printf("Publish state error: %d\n", err);
-//         //send_syslog_message("mqtt", "publish state error %d", err);
-//         application_restart(REBOOT_MQTT_F3);
-//     }
-
-//     //printf("published new state. %s = %s\n", state, state_payload);
-// }
+    }
+}
 
 /*!
  * \brief print home assistant discovery payload into callers buffer
@@ -872,30 +863,6 @@ void mqttst_publish_all_thermostat_states(mqtt_client_t *client, void *arg)
 }
 
 /*!
- * \brief send relay state to the mqtt broker and wait for callback confirmation
- *
- * \param relay 0 - 7
- * 
- * \return nothing
- */
-void mqttst_publish_relay_state(int relay, mqtt_client_t *client, void *arg)
-{
-    int j = 0;
-
-    // if ((relay >= 0) && (relay < config.rmtsw_relay_max))
-    // {
-    //     states_outstanding = 1;
-    //     mqttst_publish_state(relay, client, arg);
-
-    //     // sleep until callback complete or 5 seconds elapse
-    //     for(j=0; (j < 100) && states_outstanding; j++)
-    //     {
-    //         SLEEP_MS(50);
-    //     }
-    // }
-}
-
-/*!
  * \brief trigger publication of thermostat states by mqtt task
  * 
  * \return nothing
@@ -991,67 +958,50 @@ int mqttst_initialize_topic_staus(void)
 
 
 /*!
- * \brief Send relay state publication
- *
- * \param topic  topic to publish
+ * \brief safely tear down the mqtt connection
  * 
  * \return nothing
  */
-void mqttst_publish_state(MQTT_TOPIC_ID_T topic_id, mqtt_client_t *client)
+void mqttst_tear_down(void)
 {
-    const char *pub_payload = "Pico2W Hello!";
-    err_t err = 0;
-    u8_t qos = 2; // 0, 1, or 2
-    u8_t retain = 0;
-    char state[64];
-    char state_payload[64];
-    static MQTT_CALLBACK_ID_T state_arg = MQTT_CALLBACK_STATE_ID;
+    u8_t connection_up = 0;
 
-
-    //printf("published new state. %s = %s\n", state, state_payload);
-
-    switch(topic_id)
+    if (mqtt_client != NULL)
     {
-    case TOPIC_MODE_STATE:
-        printf("effective mode = %d\n", web.thermostat_effective_mode);        
-        thermostat_get_home_assistant_mode_string(web.thermostat_effective_mode, state_payload, sizeof(state_payload));
-        printf("effective mode payload = %s\n", state_payload); 
-        break;
-    case TOPIC_MODE_SET:
-        err = 1;
-        break; 
-    case TOPIC_TEMPERATURE_CURRENT:
-        snprintf(state_payload, sizeof(state_payload), "%c%d.%d", web.thermostat_temperature<0?'-':' ', abs(web.thermostat_temperature/10), abs(web.thermostat_temperature%10));
-        
-        break;
-    case TOPIC_TEMPERATURE_SETPOINT:
-        snprintf(state_payload, sizeof(state_payload), "%c%d.%d", web.thermostat_set_point<0?'-':' ', abs(web.thermostat_set_point/10), abs(web.thermostat_set_point%10));
-        break;
-    case TOPIC_TEMPERATURE_SET:
-        err = 1;
-        break;         
-    default:
-        err = 2;
-        break;
-    }
-
-    if (!err)
-    {
-        STRNCPY(state, mqtt_status_table[topic_id].topic_name, sizeof(state));
-
-        printf("PUBLISHING: topic = %s payload = %s\n", state, state_payload);
-        // send state
-        retain = 0;
         cyw43_arch_lwip_begin();
-        err = mqtt_publish(client, state, state_payload, strlen(state_payload), qos, retain, mqttst_pub_request_cb, &state_arg);
+        connection_up = mqtt_client_is_connected(mqtt_client);
         cyw43_arch_lwip_end();
 
-        if(err != ERR_OK) 
+        if (connection_up)
         {
-            printf("Publish state error: %d\n", err);
-            //send_syslog_message("mqtt", "publish state error %d", err);
-            application_restart(REBOOT_MQTT_F3);
+            cyw43_arch_lwip_begin();
+            mqtt_disconnect(mqtt_client);
+            cyw43_arch_lwip_end();           
         }
 
+        mqtt_client = NULL;
     }
+
+    // mark connection down
+    connection_process_started = false;
+    connection_completed = false;
+    discovery_completed = false;
+
+    // deinitialize connection related functions (so that they will be rerun)
+    mqttst_deinitialize(mqttst_initialize_ha_states);
+    mqttst_deinitialize(mqttst_initialize_ha_discovery);
+    mqttst_deinitialize(mqttst_initialize_subscription);
+    mqttst_deinitialize(mqttst_initialize_connection);
+
+    SLEEP_MS(connection_backoff_ms);
+}
+
+/*!
+ * \brief request connection restart
+ * 
+ * \return nothing
+ */
+void mqttst_request_connection_restart(void)
+{
+    connection_restart_request = true;
 }

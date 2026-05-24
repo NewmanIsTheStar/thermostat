@@ -108,8 +108,7 @@ THERMOSTAT_STATE_T control_thermostat_relays(long int temperaturex10)
     {
         // check for temperature offset entered on front panel display
         temporary_set_point_offsetx10 = display_get_setpoint_offset();
-        printf("setpoint offset is %d base is %d sum = %d\n", temporary_set_point_offsetx10, display_get_base_temperature(), display_get_base_temperature() + temporary_set_point_offsetx10);
-
+        
         // determine current setpoints based on schedule, powerwall status and last cycle
         update_current_setpoints(last_active, temperaturex10, temporary_set_point_offsetx10);
 

@@ -93,14 +93,14 @@ bool handle_button_press_with_timeout(TickType_t timeout)
                     (passed_value == config.thermostat_decrease_button_gpio) ||
                     (passed_value == config.thermostat_mode_button_gpio))
                 {
-                    printf("IRQ detected from GPIO%d\n", passed_value);
+                    //printf("IRQ detected from GPIO%d\n", passed_value);
                     enable_irq(true);
                     button_pressed = true;  
                     mqtt_active = false;              
                 }
                 else if (passed_value == MQTT_FAKE_BUTTON_IRQ)
                 {
-                    printf("mqtt fake button press detected\n");
+                    //printf("mqtt fake button press detected\n");
                     mqtt_active = true;
                 }
                 else
@@ -118,13 +118,13 @@ bool handle_button_press_with_timeout(TickType_t timeout)
             if (gpio_get(config.thermostat_increase_button_gpio) == false)
             {                
                 display_setpoint_offset+=10;
-                printf("INCREASE Button pressed. Setpoint offset = %d\n", display_setpoint_offset);                
+                //printf("INCREASE Button pressed. Setpoint offset = %d\n", display_setpoint_offset);                
             }
 
             if (gpio_get(config.thermostat_decrease_button_gpio) == false)
             {                
                 display_setpoint_offset-=10;
-                printf("DECREASE Button pressed. Setpoint offset = %d\n", display_setpoint_offset);                
+                //printf("DECREASE Button pressed. Setpoint offset = %d\n", display_setpoint_offset);                
             }
 
             if (gpio_get(config.thermostat_mode_button_gpio) == false)
@@ -430,7 +430,7 @@ void display_fake_button_press(void)
 
   if (irq_queue)
   {
-    // Signal the alert clearance task
+    // pretend a physical button was pressed so that the mqtt command is processed like front panel inputs
     xQueueSend(irq_queue, &fake_button_irq_number, 0);
   }
 }
