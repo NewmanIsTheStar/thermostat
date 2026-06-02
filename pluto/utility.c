@@ -35,8 +35,6 @@
 #include "pluto.h"
 
 
-#define FLASH_TARGET_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
-
 //extern REBOOT_REASON_T reboot_reason;
 
 //prototype

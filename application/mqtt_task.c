@@ -68,6 +68,19 @@ typedef enum
     NUM_TOPICS                  = 5
 } MQTT_TOPIC_ID_T;
 
+typedef enum
+{
+    MQTT_REASON_UNKNOWN             = 0,
+    MQTT_REASON_CONNECTION_FAILED   = 1,
+    MQTT_REASON_CONNECTION_DROPPED  = 2,
+    MQTT_REASON_DISCONNECT          = 3,
+    MQTT_REASON_TIMEOUT             = 4,
+    MQTT_REASON_PUBLISH_FAILED_CB   = 5,
+    MQTT_PUBLISH_FAILED_CALL        = 6,
+    MQTT_REASON_CONFIG_CHANGE       = 7,
+
+    NUM_MQTT_REASONS = 8
+} MQTT_REASON_T;
 
 // prototypes -- mqttst_ prefix is used for local functions, whereas lwip functions use mqtt_ 
 int mqttst_sanitize_user_config(void);
@@ -79,6 +92,7 @@ void mqttst_incoming_publish_cb(void *arg, const char *topic, u32_t tot_len);
 void mqttst_incoming_data_cb(void *arg, const u8_t *data, u16_t len, u8_t flags);
 void mqttst_sub_request_cb(void *arg, err_t result);
 void mqttst_start_sub(mqtt_client_t *client);
+void mqttst_end_sub(mqtt_client_t *client);
 void mqttst_pub_request_cb(void *arg, err_t result);
 void mqttst_publish_discovery(mqtt_client_t *client, void *arg);
 int mqttst_initialize_subscription(void);
@@ -93,7 +107,7 @@ int mqttst_wait(TickType_t timeout);
 void mqttst_queue_send(uint8_t message);
 int mqttst_initialize_queue(void);
 void mqttst_tear_down(void);
-void mqttst_request_connection_restart(void);
+void mqttst_request_connection_restart(MQTT_REASON_T reason);
 
 // external variables
 extern uint32_t unix_time;
@@ -112,7 +126,7 @@ static MQTT_INITIALIZATION_T mqtt_initialization_table[] =
 };
 static MQTT_TOPIC_STATUS_T mqtt_status_table[NUM_TOPICS];
 static bool connection_process_started = false;
-static bool discovery_initialized = false;
+static bool discovery_process_started = false;
 static bool states_initialized = false;
 static bool connection_completed = false;
 static bool subscription_complete = false;
@@ -120,6 +134,7 @@ static bool discovery_completed = false;
 static bool states_completed = false;
 static int states_outstanding = 0;
 static bool connection_restart_request = false;
+static bool disconnect_completed = false;
 static ip_addr_t broker_ip;
 static MQTT_TOPIC_ID_T mqtt_rx_payload_type = NUM_TOPICS;
 static QueueHandle_t mqtt_queue = NULL;                     
@@ -128,6 +143,7 @@ static bool mqtt_queue_initialized = false;
 static mqtt_client_t *mqtt_client;
 static char *homeassistant_discovery_payload = NULL;
 static int connection_backoff_ms = CONNECTION_BACKOFF_MS_DEFAULT;
+static MQTT_REASON_T connection_restart_reason = MQTT_REASON_UNKNOWN;
 static char mqtt_requested_mode[16];
 static char mqtt_requested_temperature[16];
 /*!
@@ -203,6 +219,9 @@ void mqtt_task(void *params)
 
         if (connection_restart_request)
         {
+            printf("performing teardown reason=%d\n", connection_restart_reason);
+            send_syslog_message("mqtt", "Performing teardown reason=%d", connection_restart_reason);
+
             mqttst_tear_down();
             connection_restart_request = false;
         }
@@ -224,6 +243,7 @@ void mqtt_task(void *params)
 int mqttst_initialize(void)
 {
     static bool init_complete = false;
+    static int  attempt = 0;
     int err = 0;
     int i;
 
@@ -236,19 +256,21 @@ int mqttst_initialize(void)
             if (!mqtt_initialization_table[i].initialization_complete)
             {
                 err++;
-                printf("MQTT Error initializing subsystem %d\n", i);
+                printf("MQTT incomplete initialization of subsystem %d at attempt %d\n", i, attempt);
+                init_complete = false;
             }
         }
     }
 
     if (err)
     {
-        printf("MQTT %d subsystems failed to initialize\n", err);
+        printf("MQTT %d subsystem%s failed to initialize during attempt %d\n", err, err>1?"s":"", attempt);
         
     } else if (!init_complete)
     {
-        printf("MQTT all subsystems sucessfully initialized\n");
+        printf("MQTT all subsystems sucessfully initialized at attempt %d\n", attempt);
         init_complete = true;
+        attempt = 0;
     }
 
     return(err);
@@ -288,7 +310,11 @@ int mqttst_deinitialize(int (*subsytem_init_func)(void))
  * \return 0 on success
  */
 int mqttst_sanitize_user_config(void)
-{   
+{
+    // force zero termination
+    config.mqtt_user[sizeof(config.mqtt_user)- 1] = 0;
+    config.mqtt_password[sizeof(config.mqtt_password)- 1] = 0;
+    config.mqtt_broker_address[sizeof(config.mqtt_broker_address)- 1] = 0;
 
     return(0);
 }
@@ -305,6 +331,9 @@ int mqttst_initialize_connection(void)
     int err = -1;
     static struct mqtt_connect_client_info_t ci;
 
+    // generate unique mqtt client name
+    sprintf(web.mqtt_client_name, "%s-%02x-%02x-%02x-%02x-%02x-%02x", APP_NAME, web.mac[0], web.mac[1], web.mac[2], web.mac[3], web.mac[4], web.mac[5]);
+
     if (config.mqtt_broker_address[0] != 0)
     {
         broker_ip.addr = address_string_to_ip(config.mqtt_broker_address);
@@ -312,10 +341,10 @@ int mqttst_initialize_connection(void)
         if (broker_ip.addr)
         {
             memset(&ci, 0, sizeof(ci));
-            ci.client_id = "pi_pico2w_client";
+            ci.client_id = web.mqtt_client_name;
             ci.client_user = config.mqtt_user;
             ci.client_pass = config.mqtt_password;
-            ci.keep_alive = 60;
+            ci.keep_alive = 30;
 
             cyw43_arch_lwip_begin();
             mqtt_client = mqtt_client_new();
@@ -333,6 +362,11 @@ int mqttst_initialize_connection(void)
                 {
                     connection_process_started = true;
                 }
+                else
+                {
+                    printf("connect attempt failed\n");
+                    send_syslog_message("mqtt", "Connect attempt failed");
+                }                
             }
         }
 
@@ -378,11 +412,12 @@ int mqttst_initialize_ha_discovery(void)
 
     if (connection_completed)
     {
-        //printf("about to call publish discovery\n");
+        printf("sending home assitant discovery packet\n");
+        send_syslog_message("mqtt", "Sending home assistant discovery packet"); 
 
         mqttst_publish_discovery(mqtt_client, NULL);
         
-        discovery_initialized = true;
+        discovery_process_started = true;
 
         err = 0;
     }
@@ -402,6 +437,13 @@ int mqttst_initialize_ha_discovery(void)
 int mqttst_initialize_ha_states(void)
 {
     int err = -1;
+    int j = 0;
+
+    // sleep until discovery_completed or 5 seconds elapse
+    for(j=0; (j < 100) && !discovery_completed; j++) 
+    {
+        SLEEP_MS(50);
+    }
 
     if (discovery_completed)
     {
@@ -429,28 +471,35 @@ int mqttst_initialize_ha_states(void)
  */
 void mqttst_connection_cb(mqtt_client_t *client, void *arg, mqtt_connection_status_t status)
 {
-    if (status == MQTT_CONNECT_ACCEPTED)
+    switch(status)
     {
-        //printf("MQTT Connected!\n");
+    case MQTT_CONNECT_ACCEPTED:
         connection_completed = true;
-        connection_backoff_ms = CONNECTION_BACKOFF_MS_DEFAULT;
-
-        // // Subscribe to a topic here
-        // mqtt_start_sub(client);
-
-    } else
-    {
+        connection_backoff_ms = CONNECTION_BACKOFF_MS_DEFAULT;    
+        break;
+    case MQTT_CONNECT_DISCONNECTED:
+        disconnect_completed = true;
+        if (!connection_restart_request)
+        {
+            mqttst_request_connection_restart(MQTT_REASON_DISCONNECT);
+        }
+        break;
+    case MQTT_CONNECT_TIMEOUT:
+        mqttst_request_connection_restart(MQTT_REASON_TIMEOUT);
+        break;
+    default:
         printf("MQTT Connection failed: %d\n", status);
 
         // double connection attempt backoff time up to approx 5 minutes
-        if (connection_backoff_ms < 5*60000)
+        if (!connection_completed && (connection_backoff_ms < 5*60000))
         {
             connection_backoff_ms *=2;
         }
         else
         {
-            mqttst_request_connection_restart();
-        } 
+           mqttst_request_connection_restart(MQTT_REASON_UNKNOWN);
+        }     
+        break;                        
     }
 }
 
@@ -562,8 +611,6 @@ void mqttst_start_sub(mqtt_client_t *client)
     //printf("subscribe result = %d\n", err);
 }
 
-/*PUBLISH**********************************************************************************************/
-// 1. Define callback for publish completion
 /*!
  * \brief Receive publication process status upon completion
  *
@@ -576,7 +623,7 @@ void mqttst_pub_request_cb(void *arg, err_t result)
     if(result != ERR_OK) 
     {
         printf("Publish failed: %d\n", result);
-        mqttst_request_connection_restart();
+        mqttst_request_connection_restart(MQTT_REASON_PUBLISH_FAILED_CB);
     } else 
     {
         //printf("Publish success\n");
@@ -609,7 +656,6 @@ void mqttst_pub_request_cb(void *arg, err_t result)
     } 
 }
 
-// 2. Example publish function
 /*!
  * \brief Send discovery publication
  *
@@ -650,6 +696,11 @@ void mqttst_publish_discovery(mqtt_client_t *client, void *arg)
         err = mqtt_publish(client, discovery_topic, "", 0, qos, retain, mqttst_pub_request_cb, arg);
         cyw43_arch_lwip_end();
 
+        if(err != ERR_OK) 
+        {
+            printf("Publish discovery error while removing device from home assistant: %d\n", err);
+        }
+
         SLEEP_MS(1000);
 
         // add device to home assistant
@@ -660,7 +711,7 @@ void mqttst_publish_discovery(mqtt_client_t *client, void *arg)
 
         if(err != ERR_OK) 
         {
-            printf("Publish discovery error: %d\n", err);
+            printf("Publish discovery error while adding device to home asssitant: %d\n", err);
         }
     }
     else
@@ -685,6 +736,7 @@ void mqttst_publish_state(MQTT_TOPIC_ID_T topic_id, mqtt_client_t *client)
     char state[64];
     char state_payload[64];
     static MQTT_CALLBACK_ID_T state_arg = MQTT_CALLBACK_STATE_ID;
+    int j = 0;
 
     switch(topic_id)
     {
@@ -719,12 +771,19 @@ void mqttst_publish_state(MQTT_TOPIC_ID_T topic_id, mqtt_client_t *client)
         err = mqtt_publish(client, state, state_payload, strlen(state_payload), qos, retain, mqttst_pub_request_cb, &state_arg);
         cyw43_arch_lwip_end();
 
-        if(err != ERR_OK) 
+        if(err == ERR_OK) 
+        {
+            // wait for callback to zero states_outstanding        
+            for(j=0; (j < 100) && states_outstanding; j++)
+            {
+                SLEEP_MS(50);
+            } 
+        }  
+        else      
         {
             printf("Publish state error: %d\n", err);
-            mqttst_request_connection_restart();
+            mqttst_request_connection_restart(MQTT_PUBLISH_FAILED_CALL);
         }
-
     }
 }
 
@@ -798,11 +857,6 @@ int mqttst_construct_discovery_topic(char *buffer, size_t len)
     char temp_string[32];
 
     *buffer = 0;
-
-    // STRNCAT(buffer, "homeassistant/device/rmtsw-", len);
-    // sprintf(temp_string, "%02x-%02x-%02x-%02x-%02x-%02x", web.mac[0], web.mac[1], web.mac[2], web.mac[3], web.mac[4], web.mac[5]);
-    // STRNCAT(buffer, temp_string, len);
-    // STRNCAT(buffer, "/config", len);  
     
     STRNCAT(buffer, "homeassistant/climate/st-", len);
     sprintf(temp_string, "%02x-%02x-%02x-%02x-%02x-%02x", web.mac[0], web.mac[1], web.mac[2], web.mac[3], web.mac[4], web.mac[5]);
@@ -828,37 +882,19 @@ void mqttst_publish_all_thermostat_states(mqtt_client_t *client, void *arg)
     if (j < 100)
     {
         states_outstanding++;
-        mqttst_publish_state(TOPIC_MODE_STATE, client);
-        
-        // wait for callback to zero states_outstanding
-        for(j=0; (j < 100) && states_outstanding; j++)
-        {
-            SLEEP_MS(50);
-        }             
+        mqttst_publish_state(TOPIC_MODE_STATE, client);           
     }   
 
         if (j < 100)
     {
         states_outstanding++;
-        mqttst_publish_state(TOPIC_TEMPERATURE_CURRENT, client);
-
-        // wait for callback to zero states_outstanding
-        for(j=0; (j < 100) && states_outstanding; j++)
-        {
-            SLEEP_MS(50);
-        }             
+        mqttst_publish_state(TOPIC_TEMPERATURE_CURRENT, client);           
     }  
 
     if (j < 100)
     {
         states_outstanding++;
-        mqttst_publish_state(TOPIC_TEMPERATURE_SETPOINT, client);
-                    
-        // wait for callback to zero states_outstanding        
-        for(j=0; (j < 100) && states_outstanding; j++)
-        {
-            SLEEP_MS(50);
-        }             
+        mqttst_publish_state(TOPIC_TEMPERATURE_SETPOINT, client);          
     }      
 }
 
@@ -965,6 +1001,7 @@ int mqttst_initialize_topic_staus(void)
 void mqttst_tear_down(void)
 {
     u8_t connection_up = 0;
+    int j = 0;
 
     if (mqtt_client != NULL)
     {
@@ -974,11 +1011,25 @@ void mqttst_tear_down(void)
 
         if (connection_up)
         {
+            // unsubscribe
+            cyw43_arch_lwip_begin();
+            mqttst_end_sub(mqtt_client);
+            cyw43_arch_lwip_end();
+            
+            // disconnect
             cyw43_arch_lwip_begin();
             mqtt_disconnect(mqtt_client);
-            cyw43_arch_lwip_end();           
+            cyw43_arch_lwip_end();   
+            
+            // sleep until disconnect_completed or 5 seconds elapse
+            for(j=0; (j < 100) && !disconnect_completed; j++) 
+            {
+                SLEEP_MS(50);
+            }             
         }
 
+        // free client memory
+        mqtt_client_free(mqtt_client);
         mqtt_client = NULL;
     }
 
@@ -986,6 +1037,8 @@ void mqttst_tear_down(void)
     connection_process_started = false;
     connection_completed = false;
     discovery_completed = false;
+    disconnect_completed = false;
+    connection_backoff_ms = CONNECTION_BACKOFF_MS_DEFAULT;
 
     // deinitialize connection related functions (so that they will be rerun)
     mqttst_deinitialize(mqttst_initialize_ha_states);
@@ -1001,7 +1054,29 @@ void mqttst_tear_down(void)
  * 
  * \return nothing
  */
-void mqttst_request_connection_restart(void)
+void mqttst_request_connection_restart(MQTT_REASON_T reason)
 {
+    connection_restart_reason = reason;
     connection_restart_request = true;
+}
+
+/*!
+ * \brief Unsubscribe
+ *
+ * \param params unused garbage
+ * 
+ * \return nothing
+ */
+void mqttst_end_sub(mqtt_client_t *client)
+{
+    int err;
+    static char topic[32];
+
+    // Unsubscribe
+    sprintf(topic, "st-%02x-%02x-%02x-%02x-%02x-%02x/#", web.mac[0], web.mac[1], web.mac[2], web.mac[3], web.mac[4], web.mac[5]);
+    cyw43_arch_lwip_begin();   
+    err = mqtt_unsubscribe(client, topic, NULL, NULL);    
+    cyw43_arch_lwip_end();
+
+    //printf("unsubscribe result = %d\n", err);
 }
