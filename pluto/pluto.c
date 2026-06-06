@@ -248,6 +248,7 @@ void boss_task(__unused void *params)
 #endif    
 
     // initialize the ip info used in the web interface
+    init_web_variables();
     set_web_ip_network_info();
 
     printf("Address = %s\n", web.ip_address_string);  
@@ -258,7 +259,6 @@ void boss_task(__unused void *params)
     set_realtime_clock(); 
 
     // start web server
-    init_web_variables();
     httpd_init();
     ssi_init();
     cgi_init();
