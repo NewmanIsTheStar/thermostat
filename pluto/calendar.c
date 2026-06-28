@@ -480,11 +480,11 @@ int get_local_time_string(char *time_string, int len)
    //  printed = snprintf(timestamp, len, "%02d:%02d", min_now/MINUTES_IN_HOUR, min_now%MINUTES_IN_HOUR);                   
 
    //  return(printed);
-   int err = 0;
+   int printed = 0;
 
-    err = get_time_string_from_unix_time(unix_time, time_string, len, 0, 1);                
+    printed = get_time_string_from_unix_time(unix_time, time_string, len, 0, 1);                
 
-    return(err);   
+    return(printed);   
    
 }
 
@@ -1381,11 +1381,12 @@ int get_local_day_string(char *day_string, int len)
  * \param[in]   isoformat   use iso format
  * \param[in]   localtime   use local time
  * 
- * \return 0 on success, non-zero on error
+ * \return number of characters ouput
  */
 int get_time_string_from_unix_time(uint32_t unixtime, char *time_string, int len, int isoformat, int localtime)
 {
    int err = 0;
+   int printed = 0;
    datetime_t date;
    int effective_offset = 0;
 
@@ -1397,19 +1398,19 @@ int get_time_string_from_unix_time(uint32_t unixtime, char *time_string, int len
       {
          // time only
          //snprintf(time_string, len, "%02d:%02d:%02d", date.hour, date.min, date.sec);
-         snprintf(time_string, len, "%02d:%02d", date.hour, date.min);         
+         printed = snprintf(time_string, len, "%02d:%02d", date.hour, date.min);         
       }
       else
       {
         // add UTC
         //snprintf(time_string, len, "%02d:%02d:%02d UTC", date.hour, date.min, date.sec);
-        snprintf(time_string, len, "%02d:%02d UTC", date.hour, date.min);        
+        printed = snprintf(time_string, len, "%02d:%02d UTC", date.hour, date.min);        
       }
     }
     else
     {
-        snprintf(time_string, len, "1970-01-01T00:00:000.000Z");  //default to unix epoch
+        printed = snprintf(time_string, len, "1970-01-01T00:00:000.000Z");  //default to unix epoch
     }
 
-    return(err);
+    return(printed);
 }
