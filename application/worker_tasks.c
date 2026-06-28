@@ -22,8 +22,8 @@
 WORKER_TASK_T worker_tasks[] =
 {
     //  function        name                    stack   priority        
-    {   thermostat_task,"Thermostat Task",      8096,   5},       
-    {   mqtt_task,      "MQTT Task",            8096,   10},   
+    {   thermostat_task,"Thermostat Task",      8096,   1},       
+    {   mqtt_task,      "MQTT Task",            8096,   1},   
 
     // end of table
     {   NULL,           NULL,               0,      0,         }

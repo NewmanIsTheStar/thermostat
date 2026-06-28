@@ -51,7 +51,7 @@ typedef enum
 
 /*
 * current non-volatile memory structure
-* Modification Rule 1 -- copy this structure, append a version number and place at the bottom of this file before making changes
+* Modification Rule 1 -- copy this structure, append a version number(format "_VERSION_X") and place at the bottom of this file before making changes
 * Modification Rule 2 -- only add new fields, do not reorder or resize existing fields (except crc)
 * Modification Rule 3 -- crc field must always be last (used to find end of config in flash)
 * Modification Rule 4 -- add an upgrade function to convert from previous version and add this function to the config_info table
@@ -60,7 +60,7 @@ typedef enum
 
 // current version
 typedef struct
-{
+{   
     // ***system config start ***
     int version;
     PERSONALITY_E personality;
