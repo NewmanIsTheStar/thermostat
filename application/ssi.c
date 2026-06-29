@@ -1158,6 +1158,7 @@ u16_t ssi_handler(int iIndex, char *pcInsert, int iInsertLen)
         // *** system SSI end ***
         /************************************************************************************************************************* */
 
+        // *** application  SSI start ***
         case SSI_usurped:  // usurped
         {
             printed = snprintf(pcInsert, iInsertLen, "%s", web.last_usurped_timestring);    
@@ -2165,7 +2166,7 @@ u16_t ssi_handler(int iIndex, char *pcInsert, int iInsertLen)
         // break;
         case SSI_irgnow: //irgnow
         {
-            printed = snprintf(pcInsert, iInsertLen, "%s", web.irrigation_test_enable?"checked":"");
+            printed = snprintf(pcInsert, iInsertLen, "%s", web.irrigation_override_enable?"checked":"");
         }   
         break;
         case SSI_sp1viz:

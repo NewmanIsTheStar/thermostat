@@ -15,8 +15,10 @@
 //#include "hardware/rtc.h"
 #include "pico/util/datetime.h"
 #include "hardware/watchdog.h"
+#if defined(PICO_BOARD_PICO2) || defined(PICO_BOARD_PICO2W)
 #include "hardware/structs/powman.h"
 #include "hardware/regs/powman.h"
+#endif
 
 #include "lwip/netif.h"
 #include "lwip/ip4_addr.h"

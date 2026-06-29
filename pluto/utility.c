@@ -26,7 +26,7 @@
 
 #include "stdarg.h"
 
-//#include "weather.h"
+#include "web.h"
 #include "flash.h"
 #include "calendar.h"
 #include "utility.h"

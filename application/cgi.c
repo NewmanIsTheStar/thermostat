@@ -1605,9 +1605,9 @@ const char * cgi_relay_handler(int iIndex, int iNumParams, char *pcParam[], char
                     new_irrigation_test_enable = 0;  // this should never happen, since the parameter is only passed if "on"
                 }   
 
-                if (value[0] && !web.irrigation_test_enable)
+                if (value[0] && !web.irrigation_override_enable)
                 {
-                    web.irrigation_test_enable = 1;
+                    web.irrigation_override_enable = 1;
                     snprintf(web.status_message, sizeof(web.status_message), "Preparing for irrigation test");
                 } 
             }
@@ -1622,11 +1622,11 @@ const char * cgi_relay_handler(int iIndex, int iNumParams, char *pcParam[], char
     }
 
     // handle irrigation test checkbox
-    if (web.irrigation_test_enable != new_irrigation_test_enable)
+    if (web.irrigation_override_enable != new_irrigation_test_enable)
     {
-        web.irrigation_test_enable = new_irrigation_test_enable;
+        web.irrigation_override_enable = new_irrigation_test_enable;
 
-        if (web.irrigation_test_enable == 1)
+        if (web.irrigation_override_enable == 1)
         {
            snprintf(web.status_message, sizeof(web.status_message), "Preparing for irrigation test"); 
         }
@@ -1647,7 +1647,7 @@ const char * cgi_relay_handler(int iIndex, int iNumParams, char *pcParam[], char
     // Send the next page back to the user
     if (config.personality == SPRINKLER_CONTROLLER)
     {
-        if (!web.irrigation_test_enable)
+        if (!web.irrigation_override_enable)
         {    
             return "/z_relay.shtml";
         }
@@ -1721,7 +1721,7 @@ const char * cgi_wificountry_handler(int iIndex, int iNumParams, char *pcParam[]
 // {
 //     //TODO: proper intertask communication
 //     snprintf(web.status_message, sizeof(web.status_message), "Irrigation test terminated");  
-//     web.irrigation_test_enable = 0;
+//     web.irrigation_override_enable = 0;
 //     set_irrigation_relay_test_zone(-1);    
 //     test_end_redirect = false;
 //     xTaskNotifyGiveIndexed(worker_tasks[0].task_handle, 0);
@@ -1729,7 +1729,7 @@ const char * cgi_wificountry_handler(int iIndex, int iNumParams, char *pcParam[]
 //     // Send the next page back to the user
 //     if (config.personality == SPRINKLER_CONTROLLER)
 //     {
-//         if (!web.irrigation_test_enable)
+//         if (!web.irrigation_override_enable)
 //         {    
 //             return "/index.shtml";
 //         }
@@ -1777,7 +1777,7 @@ const char * cgi_wificountry_handler(int iIndex, int iNumParams, char *pcParam[]
 //         if ((zone >=0) && (zone <config.zone_max))
 //         {
 //             // check if test in progress
-//             if (web.irrigation_test_enable)
+//             if (web.irrigation_override_enable)
 //             {
 //                 // check if test zone altered
 //                 if (zone != get_irrigation_relay_test_zone())
@@ -1812,7 +1812,7 @@ const char * cgi_wificountry_handler(int iIndex, int iNumParams, char *pcParam[]
 //             {
 //                 printf("%s\n", web.status_message);        
 //                 set_irrigation_relay_test_zone(zone);
-//                 web.irrigation_test_enable = 1;
+//                 web.irrigation_override_enable = 1;
 //                 test_end_redirect = true;
 //                 last_zone = zone;
 

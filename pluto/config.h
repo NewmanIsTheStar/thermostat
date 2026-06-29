@@ -23,6 +23,7 @@ typedef enum
     HVAC_THERMOSTAT            =   3,             // wifi confrolled thermostat
     HOME_CONTROLLER            =   4,             // home controller
     REMOTE_SWITCH              =   5,             // wifi controlled relays
+    ANEMOMETER                 =   6,             // anemometer
     
     NO_PERSONALITY             =   4294967295     // force enum to be 4 bytes long 
 } PERSONALITY_E;

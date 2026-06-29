@@ -43,7 +43,7 @@ typedef struct WEB_VARIABLES
   int led_current_pattern;
   int led_current_transition_delay;
   char led_last_request_ip[32];
-  int irrigation_test_enable;
+  int irrigation_override_enable;
   int thermostat_set_point;                // desired temperature
   int thermostat_heating_set_point;        // target temperature when heating
   int thermostat_cooling_set_point;        // target temperature when cooling 
