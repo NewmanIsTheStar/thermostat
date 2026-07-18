@@ -340,6 +340,7 @@ THERMOSTAT_MODE_T get_front_panel_mode(void)
 }
 
 //TODO: allow user to set pins back to "none"in UI and disable display.  Also investigate why display fails to initialize when pins are defined (without a reboot).
+// ALSO investigate why web ui schedule grid is not updated if display is physically disconnected -- stays at default 70 degrees for all periods
 int display_initialize(void)
 {
     int err = 0;

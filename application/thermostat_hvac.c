@@ -57,13 +57,6 @@ typedef enum
     NUM_HVAC_TIMERS      = 3
 } CLIMATE_TIMER_INDEX_T;
 
-typedef enum
-{
-    SETPOINT_BIAS_UNDEFINED = 0,
-    SETPOINT_BIAS_HEATING   = 1,   
-    SETPOINT_BIAS_COOLING   = 2
-} SETPOINT_BIAS_T;
-
 // prototypes
 int set_hvac_gpio(THERMOSTAT_STATE_T thermostat_state);
 int hvac_timer_start(CLIMATE_TIMER_INDEX_T timer_index, int minutes);
@@ -833,6 +826,9 @@ int update_current_setpoints(THERMOSTAT_STATE_T last_active, long int temperatur
     default:
         break;
     }
+
+    // share setpoint bias with web ui
+    web.setpoint_bias = setpoint_bias;
 
     return(err);
 }

@@ -48,6 +48,13 @@ typedef enum
 
 typedef enum
 {
+    SETPOINT_BIAS_UNDEFINED = 0,
+    SETPOINT_BIAS_HEATING   = 1,   
+    SETPOINT_BIAS_COOLING   = 2
+} SETPOINT_BIAS_T;
+
+typedef enum
+{
     COOLING_LAG = 0,
     HEATING_LAG = 1,   
     NUM_MOMENTUMS   = 2

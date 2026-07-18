@@ -97,16 +97,27 @@ int make_schedule_grid(void)
         }
         else
         {
-            // scheduled setpoint is dynamic based on current temperature
-            if (web.thermostat_temperature < (config.setpoint_cooling_temperaturex10[i] - config.thermostat_hysteresis))
+            // setpoint displayed in scheudle is dynamic: either the heating or cooling setpoint  
+            switch(web.setpoint_bias)
             {
+            default:
+            case SETPOINT_BIAS_UNDEFINED:
+                if (web.thermostat_temperature < (config.setpoint_cooling_temperaturex10[i] - config.thermostat_hysteresis))
+                {
+                    temp[i] = config.setpoint_heating_temperaturex10[i];
+                }
+                else
+                {
+                    temp[i] = config.setpoint_cooling_temperaturex10[i];
+                }            
+                break;
+            case SETPOINT_BIAS_HEATING:
                 temp[i] = config.setpoint_heating_temperaturex10[i];
-            }
-            else
-            {
+                break;
+            case SETPOINT_BIAS_COOLING:
                 temp[i] = config.setpoint_cooling_temperaturex10[i];
-            }
-
+                break;
+            }        
         }
     }
 
